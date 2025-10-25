@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"coup-game/game"
+	"github.com/computerscienceiscool/coup-game/game"
 )
 
 // Config holds simulation configuration

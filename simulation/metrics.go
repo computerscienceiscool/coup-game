@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"coup-game/game"
+	"github.com/computerscienceiscool/coup-game/game"
 )
 
 // MetricsCollector gathers statistics from game results

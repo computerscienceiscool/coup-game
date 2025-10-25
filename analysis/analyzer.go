@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"coup-game/simulation"
+	"github.com/computerscienceiscool/coup-game/simulation"
 )
 
 // StatisticsResult contains all analyzed data from the simulation

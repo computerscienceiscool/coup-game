@@ -70,22 +70,8 @@ func TestMetricsCollection(t *testing.T) {
 			WinnerID:         0,
 			WinnerCharacters: []string{"Duke", "Captain"},
 			TotalTurns:       10,
-			Actions: []struct {
-				Turn       int
-				PlayerID   int
-				Action     string
-				Target     int
-				Success    bool
-				Challenged bool
-				Blocker    int
-			}{
-				{0, 0, "Income", -1, true, false, -1},
-				{1, 1, "Tax", -1, true, false, -1},
-				{2, 0, "Coup", 1, true, false, -1},
-			},
 		},
 	}
-
 	// Process the results
 	collector.ProcessGameResults(results)
 

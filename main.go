@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"time"
 
-	"coup-game/analysis"
-	"coup-game/game"
-	"coup-game/simulation"
+	"github.com/computerscienceiscool/coup-game/analysis"
+	"github.com/computerscienceiscool/coup-game/game"
+	"github.com/computerscienceiscool/coup-game/simulation"
 )
 
 var (
