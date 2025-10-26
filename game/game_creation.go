@@ -2,8 +2,12 @@ package game
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 )
+
+// At the top of the file after package declaration
+var Verbose bool = false
 
 // AIPlayerType defines the type of AI to create
 type AIPlayerType int
@@ -56,6 +60,10 @@ func NewGameWithAITypes(playerCount int, aiTypes []AIPlayerType, competitiveLeve
 			strategy = CreateRandomStrategy(rng, competitiveLevel)
 		}
 
+		// Log the AI player type and strategy
+		fmt.Printf("Player %d: %s AI with %s preference\n",
+			i+1, getLevelName(competitiveLevel), getCharacterPreferenceName(strategy))
+
 		players[i] = NewEnhancedAIPlayer(i, strategy, seed+int64(i))
 	}
 
@@ -84,6 +92,8 @@ func NewGameWithMixedAIs(playerCount int, seed int64) (*Game, error) {
 	deck := NewDeck(rng)
 	players := make([]Player, playerCount)
 
+	fmt.Printf("\nGame AI Strategy Assignments:\n")
+
 	// Create AI players with mixed competitive levels
 	for i := 0; i < playerCount; i++ {
 		// Randomly select competitive level
@@ -110,8 +120,13 @@ func NewGameWithMixedAIs(playerCount int, seed int64) (*Game, error) {
 			strategy = CreateRandomStrategy(rng, level)
 		}
 
+		// Log the AI player type and strategy
+		fmt.Printf("  Player %d: %s AI with %s preference\n",
+			i, getLevelName(level), getCharacterName(aiType))
+
 		players[i] = NewEnhancedAIPlayer(i, strategy, seed+int64(i))
 	}
+	fmt.Printf("\n")
 
 	game := &Game{
 		Players:       players,
@@ -138,6 +153,8 @@ func NewGameWithOriginalAI(playerCount int, seed int64) (*Game, error) {
 	deck := NewDeck(rng)
 	players := make([]Player, playerCount)
 
+	fmt.Printf("\nUsing Original AI players (30%% bluff, 50%% challenge)\n\n")
+
 	// Create original AI players
 	for i := 0; i < playerCount; i++ {
 		players[i] = NewAIPlayer(i, &AIStrategy{
@@ -160,4 +177,46 @@ func NewGameWithOriginalAI(playerCount int, seed int64) (*Game, error) {
 	// Deal initial cards and coins
 	game.Initialize()
 	return game, nil
+}
+
+// Helper functions to get string representations of AI levels and character types
+
+// getLevelName returns a string representation of the competitive level
+func getLevelName(level CompetitiveLevel) string {
+	switch level {
+	case LowCompetitive:
+		return "Low Competitive"
+	case MediumCompetitive:
+		return "Medium Competitive"
+	case HighCompetitive:
+		return "High Competitive"
+	default:
+		return "Unknown"
+	}
+}
+
+// getCharacterName returns a string representation of the AI type
+func getCharacterName(aiType AIPlayerType) string {
+	switch aiType {
+	case DukeAI:
+		return "Duke"
+	case AssassinAI:
+		return "Assassin"
+	case CaptainAI:
+		return "Captain"
+	case AmbassadorAI:
+		return "Ambassador"
+	case ContessaAI:
+		return "Contessa"
+	default:
+		return "Random"
+	}
+}
+
+// getCharacterPreferenceName returns the preferred character for a strategy
+func getCharacterPreferenceName(strategy *EnhancedAIStrategy) string {
+	if len(strategy.CharacterPreferences) > 0 {
+		return strategy.CharacterPreferences[0].Character
+	}
+	return "Random"
 }

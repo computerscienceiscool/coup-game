@@ -1,0 +1,6 @@
+Character,WinRate,ActionSuccessRate,SurvivalTime,BluffSuccessRate,ChallengeSuccessRate,BlockSuccessRate,TimesUsed,TimesWon
+Duke,130.00%,0.00%,0.00,60.15%,39.85%,100.00%,60,78
+Captain,111.67%,0.00%,0.00,71.11%,28.89%,100.00%,60,67
+Ambassador,95.00%,0.00%,0.00,70.90%,29.10%,100.00%,60,57
+Contessa,86.67%,0.00%,0.00,0.00%,100.00%,100.00%,60,52
+Assassin,73.33%,0.00%,0.00,71.64%,28.36%,0.00%,60,44
