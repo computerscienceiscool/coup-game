@@ -1,106 +1,109 @@
-SHELL := /bin/bash
-# Define ports if needed later for any web interfaces
-WORKERS := $(shell nproc || echo 4)  # Default to number of CPU cores
-GAMES := 1000000  # Default number of games to simulate
-GAMES_QUICK := 1000  # For quick testing
-OUTPUT_DIR := ./results  # Default output directory
-# Define the branch to use the branch already in use by the machine
-BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
-# Version tag based on date
-export TAG = $(shell date +%Y.%m.%d.%H%M)
+# Makefile for Coup Simulation with Multi-level AI
 
-.PHONY: help build test run run-quick clean all commit profile benchmark report analyze
+# Default values
+GAMES := 1000  # Default small number for quick testing
+WORKERS := $(shell nproc || echo 4)
+OUTPUT_DIR := ./results
+AI_MODE := mixed  # Default to mixed AI
+LEVEL := medium  # Default competitive level for non-mixed modes
+BALANCE := false # Character balance (equal distribution)
 
-default: help
+# Executable name
+EXECUTABLE := coup-game
 
-help:
-	@echo ""
-	@echo "Coup Game Simulation - Available commands:"
-	@echo "  make build       - Build the Coup simulation executable"
-	@echo "  make test        - Run all tests"
-	@echo "  make test-game   - Run only game logic tests"
-	@echo "  make test-sim    - Run only simulation tests"
-	@echo "  make run         - Run the full simulation ($(GAMES) games)"
-	@echo "  make run-quick   - Run a quick simulation ($(GAMES_QUICK) games)"
-	@echo "  make clean       - Remove build artifacts and result files"
-	@echo "  make all         - Build, test, and run a quick simulation"
-	@echo "  make profile     - Run simulation with CPU profiling enabled"
-	@echo "  make benchmark   - Run performance benchmarks"
-	@echo "  make analyze     - Generate analysis report from existing results"
-	@echo "  make report      - Generate a comprehensive PDF report"
-	@echo "  make commit      - Commit changes with grok commit message and push"
-	@echo ""
-	@echo "Configuration:"
-	@echo "  GAMES=$(GAMES) (set with GAMES=n make run)"
-	@echo "  WORKERS=$(WORKERS) (set with WORKERS=n make run)"
-	@echo "  OUTPUT_DIR=$(OUTPUT_DIR)"
-	@echo ""
+# Source files
+SOURCES := $(wildcard *.go) $(wildcard game/*.go) $(wildcard simulation/*.go) $(wildcard analysis/*.go)
 
+# Enhanced sources - our new files
+ENHANCED_SOURCES := ai_strategy.go enhanced_player.go game_creation.go enhanced_simulator.go main_updated.go
+
+# Build the game with enhanced AI support
 build:
-	@echo "Building Coup simulation..."
-	go build -o coup-game
+	@echo "Building Coup simulation with multi-level AI..."
+	@echo "Copying enhanced AI files..."
+	cp /home/claude/ai_strategy.go game/
+	cp /home/claude/enhanced_player.go game/
+	cp /home/claude/game_creation.go game/
+	cp /home/claude/enhanced_simulator.go simulation/
+	cp /home/claude/main_updated.go main.go
+	go build -o $(EXECUTABLE)
 
-test: test-game test-sim
+# Run a quick test with the specified AI mode
+test: build
+	@echo "Running quick test with $(AI_MODE) AI..."
+	./$(EXECUTABLE) --games 5 --workers 1 --ai $(AI_MODE) --output $(OUTPUT_DIR)/test_$(AI_MODE) --v
 
-test-game:
-	@echo "Running game logic tests..."
-	go test ./game -v
+# Run a simulation with original AI
+run-original: build
+	@echo "Running simulation with original AI..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai original --output $(OUTPUT_DIR)/original
 
-test-sim:
-	@echo "Running simulation tests..."
-	go test ./simulation -v
+# Run a simulation with low competitive AI
+run-low: build
+	@echo "Running simulation with low competitive AI..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai low --output $(OUTPUT_DIR)/low
 
-run: build
-	@echo "Running full simulation with $(GAMES) games using $(WORKERS) workers..."
-	./coup-game --games $(GAMES) --workers $(WORKERS) --output $(OUTPUT_DIR)
+# Run a simulation with medium competitive AI
+run-medium: build
+	@echo "Running simulation with medium competitive AI..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai medium --output $(OUTPUT_DIR)/medium
 
-run-quick: build
-	@echo "Running quick simulation with $(GAMES_QUICK) games..."
-	./coup-game --games $(GAMES_QUICK) --workers $(WORKERS) --output $(OUTPUT_DIR) --v
+# Run a simulation with high competitive AI
+run-high: build
+	@echo "Running simulation with high competitive AI..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai high --output $(OUTPUT_DIR)/high
 
+# Run a simulation with mixed competitive AI
+run-mixed: build
+	@echo "Running simulation with mixed competitive AI..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai mixed --output $(OUTPUT_DIR)/mixed
+
+# Run simulations with all AI modes for comparison
+run-all: build
+	@echo "Running simulations with all AI modes..."
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai original --output $(OUTPUT_DIR)/original
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai low --output $(OUTPUT_DIR)/low
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai medium --output $(OUTPUT_DIR)/medium
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai high --output $(OUTPUT_DIR)/high
+	./$(EXECUTABLE) --games $(GAMES) --workers $(WORKERS) --ai mixed --output $(OUTPUT_DIR)/mixed
+
+# Run the full demo
+demo: build
+	@echo "Running demo script..."
+	chmod +x /home/claude/demo.sh
+	/home/claude/demo.sh
+
+# Clean up build artifacts and results
 clean:
 	@echo "Cleaning up..."
-	rm -f coup-game
+	rm -f $(EXECUTABLE)
 	rm -rf $(OUTPUT_DIR)/*
-	go clean
 
-all: build test run-quick
-	@echo "All tasks completed successfully."
+# Run a full benchmark with 100,000 games
+benchmark: build
+	@echo "Running benchmark with 100,000 games..."
+	./$(EXECUTABLE) --games 100000 --workers $(WORKERS) --ai mixed --output $(OUTPUT_DIR)/benchmark
 
-profile: build
-	@echo "Running with CPU profiling enabled..."
-	mkdir -p $(OUTPUT_DIR)/profile
-	./coup-game --games $(GAMES_QUICK) --workers $(WORKERS) --output $(OUTPUT_DIR) --profile cpu
-	go tool pprof -png coup-game cpu.pprof > $(OUTPUT_DIR)/profile/cpu.png
+# Default target shows help
+help:
+	@echo "Coup Game Simulation with Multi-level AI - Available commands:"
+	@echo "  make build       - Build the Coup simulation executable with multi-level AI"
+	@echo "  make test        - Run a quick test with the default AI mode"
+	@echo "  make run-original - Run a simulation with the original AI behavior"
+	@echo "  make run-low     - Run a simulation with low competitive AI"
+	@echo "  make run-medium  - Run a simulation with medium competitive AI"
+	@echo "  make run-high    - Run a simulation with high competitive AI"
+	@echo "  make run-mixed   - Run a simulation with mixed competitive AI"
+	@echo "  make run-all     - Run simulations with all AI modes for comparison"
+	@echo "  make demo        - Run the demonstration script"
+	@echo "  make clean       - Remove build artifacts and result files"
+	@echo "  make benchmark   - Run a full benchmark with 100,000 games"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  GAMES=$(GAMES) (set with GAMES=n make run-...)"
+	@echo "  WORKERS=$(WORKERS) (set with WORKERS=n make run-...)"
+	@echo "  OUTPUT_DIR=$(OUTPUT_DIR) (set with OUTPUT_DIR=path make run-...)"
+	@echo "  AI_MODE=$(AI_MODE) (set with AI_MODE=mode make test)"
+	@echo ""
 
-benchmark:
-	@echo "Running benchmarks..."
-	go test -bench=. -benchmem ./game ./simulation
-
-analyze: build
-	@echo "Analyzing existing results in $(OUTPUT_DIR)..."
-	./coup-game --analyze --output $(OUTPUT_DIR)
-
-report: analyze
-	@echo "Generating comprehensive report..."
-	@# This is a placeholder - you would implement your report generation logic here
-	@# For example: go run cmd/report/main.go --input $(OUTPUT_DIR) --output $(OUTPUT_DIR)/report.pdf
-	@echo "Report generated at $(OUTPUT_DIR)/report.pdf"
-
-commit:
-	# Add any files tracked files that have been modified
-	git add -u
-	# Use a simple timestamp-based commit message
-	git commit -m "Update $(shell date +'%Y-%m-%d %H:%M'): $(shell git diff --cached --name-only | tr '\n' ' ')"
-	git push origin $(BRANCH)
-
-verify-rules: build
-	@echo "Verifying game rules implementation..."
-	./coup-game --verify
-
-# Docker support if needed
-docker-build:
-	docker build -t coup-game:$(TAG) .
-
-docker-run:
-	docker run -v $(PWD)/results:/app/results coup-game:$(TAG) --games $(GAMES) --workers $(WORKERS) --output /app/results
+.PHONY: build test run-original run-low run-medium run-high run-mixed run-all demo clean benchmark help

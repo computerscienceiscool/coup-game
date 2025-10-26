@@ -13,12 +13,14 @@ import (
 )
 
 var (
-	games   = flag.Int("games", 1000000, "Total games to simulate")
-	workers = flag.Int("workers", runtime.NumCPU(), "Parallel workers")
-	verbose = flag.Bool("v", false, "Verbose output")
-	profile = flag.String("profile", "", "Enable profiling (cpu|mem)")
-	seed    = flag.Int64("seed", 0, "Random seed (0 for random)")
-	output  = flag.String("output", "./results", "Output directory")
+	games            = flag.Int("games", 1000000, "Total games to simulate")
+	workers          = flag.Int("workers", runtime.NumCPU(), "Parallel workers")
+	verbose          = flag.Bool("v", false, "Verbose output")
+	profile          = flag.String("profile", "", "Enable profiling (cpu|mem)")
+	seed             = flag.Int64("seed", 0, "Random seed (0 for random)")
+	output           = flag.String("output", "./results", "Output directory")
+	aiMode           = flag.String("ai", "mixed", "AI mode: original, mixed, high, medium, low")
+	characterBalance = flag.Bool("balance", false, "Enable character balancing (equal distribution)")
 )
 
 func main() {
@@ -37,6 +39,7 @@ func main() {
 
 	fmt.Printf("Starting Coup simulation with %d games using %d workers\n", *games, *workers)
 	fmt.Printf("Random seed: %d\n", *seed)
+	fmt.Printf("AI mode: %s\n", *aiMode)
 
 	// Evenly distribute games across player counts (2-6 players)
 	gamesPerCount := *games / 5
@@ -48,26 +51,50 @@ func main() {
 		6: *games - 4*gamesPerCount, // Assign remainder to 6-player games
 	}
 
-	// Configure the simulation
-	config := simulation.Config{
+	// Set the AI competitive level based on command line flag
+	var competitiveLevel game.CompetitiveLevel
+	switch *aiMode {
+	case "high":
+		competitiveLevel = game.HighCompetitive
+		fmt.Println("Using High Competitive AI players")
+	case "medium":
+		competitiveLevel = game.MediumCompetitive
+		fmt.Println("Using Medium Competitive AI players")
+	case "low":
+		competitiveLevel = game.LowCompetitive
+		fmt.Println("Using Low Competitive AI players")
+	case "original":
+		fmt.Println("Using Original AI behavior (30% bluff, 50% challenge)")
+	case "mixed":
+		fmt.Println("Using Mixed AI players with varied competitive levels")
+	default:
+		fmt.Println("Unknown AI mode, defaulting to mixed")
+		*aiMode = "mixed"
+	}
+
+	// Configure the enhanced simulation
+	config := simulation.EnhancedConfig{
 		TotalGames:          *games,
 		Workers:             *workers,
 		Verbose:             *verbose,
 		Seed:                *seed,
 		OutputDir:           *output,
 		GamesPerPlayerCount: gamesMap,
+		AIMode:              *aiMode,
+		CompetitiveLevel:    competitiveLevel,
+		CharacterBalance:    *characterBalance,
 	}
 
 	// Run a single test game first to verify rules
 	fmt.Println("Running test game...")
-	if err := runTestGame(*seed); err != nil {
+	if err := runTestGame(*seed, *aiMode, competitiveLevel); err != nil {
 		fmt.Printf("Error during test game: %v\n", err)
 		return
 	}
 
-	// Initialize the simulator
+	// Initialize the enhanced simulator
 	fmt.Println("Initializing simulation...")
-	simulator := simulation.NewSimulator(config)
+	simulator := simulation.NewEnhancedSimulator(config)
 
 	// Run the simulation
 	fmt.Println("Starting simulation...")
@@ -101,9 +128,21 @@ func main() {
 }
 
 // runTestGame runs a single game to verify rules are working correctly
-func runTestGame(seed int64) error {
-	// Create a game with 4 players
-	g, err := game.NewGame(4, seed)
+func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel) error {
+	var g *game.Game
+	var err error
+
+	// Create a game with 4 players based on AI mode
+	switch aiMode {
+	case "original":
+		g, err = game.NewGameWithOriginalAI(4, seed)
+	case "mixed":
+		g, err = game.NewGameWithMixedAIs(4, seed)
+	default:
+		// Create game with all AIs at the same competitive level
+		g, err = game.NewGameWithAITypes(4, nil, level, seed)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create test game: %w", err)
 	}
@@ -114,6 +153,13 @@ func runTestGame(seed int64) error {
 	// Print some details to verify
 	fmt.Printf("Test game completed in %d turns\n", g.Turn)
 	fmt.Printf("Winner: Player %d with %d coins\n", winner.GetID(), winner.GetCoins())
+
+	// Display winner's cards
+	winnerCards := make([]string, 0)
+	for _, card := range winner.GetInfluences() {
+		winnerCards = append(winnerCards, card.Name)
+	}
+	fmt.Printf("Winner's cards: %v\n", winnerCards)
 
 	// Check some basic rules were followed
 	for _, action := range g.ActionLog {
