@@ -45,6 +45,149 @@ const (
 	ThreatTarget                          // Target player considered the biggest threat
 )
 
+// CharacterStrategyConfig holds configuration for a character strategy at a specific level
+type CharacterStrategyConfig struct {
+	BluffRate           float64
+	ChallengeRate       float64
+	AlwaysBlock         bool
+	ActionName          string // Primary action for this character
+	ActionPreference    float64
+	CharacterBluffRate  float64
+	CharacterBlockRate  float64
+	TargetStrategy      TargetStrategy
+	UseTargetStrategy   bool // Whether to set target strategy
+}
+
+// strategyConfigs maps character and level to configuration
+var strategyConfigs = map[string]map[CompetitiveLevel]CharacterStrategyConfig{
+	Duke: {
+		HighCompetitive: {
+			BluffRate: DukeHighBluffRate, ChallengeRate: DukeHighChallengeRate, AlwaysBlock: true,
+			ActionName: "Tax", ActionPreference: TaxHighPreference,
+			CharacterBluffRate: DukeHighBluffRate, CharacterBlockRate: DukeHighBlockRate,
+		},
+		MediumCompetitive: {
+			BluffRate: DukeMediumBluffRate, ChallengeRate: DukeMediumChallengeRate, AlwaysBlock: true,
+			ActionName: "Tax", ActionPreference: TaxMediumPreference,
+			CharacterBluffRate: DukeMediumBluffRate, CharacterBlockRate: DukeMediumBlockRate,
+		},
+		LowCompetitive: {
+			BluffRate: DukeLowBluffRate, ChallengeRate: DukeLowChallengeRate, AlwaysBlock: false,
+			ActionName: "Tax", ActionPreference: TaxLowPreference,
+			CharacterBluffRate: DukeLowBluffRate, CharacterBlockRate: DukeLowBlockRate,
+		},
+	},
+	Assassin: {
+		HighCompetitive: {
+			BluffRate: AssassinHighBluffRate, ChallengeRate: AssassinHighChallengeRate, AlwaysBlock: true,
+			ActionName: "Assassinate", ActionPreference: AssassinateHighPreference,
+			CharacterBluffRate: AssassinHighBluffRate,
+			TargetStrategy: ThreatTarget, UseTargetStrategy: true,
+		},
+		MediumCompetitive: {
+			BluffRate: AssassinMediumBluffRate, ChallengeRate: AssassinMediumChallengeRate, AlwaysBlock: true,
+			ActionName: "Assassinate", ActionPreference: AssassinateMediumPreference,
+			CharacterBluffRate: AssassinMediumBluffRate,
+			TargetStrategy: StrongestTarget, UseTargetStrategy: true,
+		},
+		LowCompetitive: {
+			BluffRate: AssassinLowBluffRate, ChallengeRate: AssassinLowChallengeRate, AlwaysBlock: false,
+			ActionName: "Assassinate", ActionPreference: AssassinateLowPreference,
+			CharacterBluffRate: AssassinLowBluffRate,
+			TargetStrategy: RandomTarget, UseTargetStrategy: true,
+		},
+	},
+	Captain: {
+		HighCompetitive: {
+			BluffRate: CaptainHighBluffRate, ChallengeRate: CaptainHighChallengeRate, AlwaysBlock: true,
+			ActionName: "Steal", ActionPreference: StealHighPreference,
+			CharacterBluffRate: CaptainHighBluffRate, CharacterBlockRate: CaptainHighBlockRate,
+			TargetStrategy: RichestTarget, UseTargetStrategy: true,
+		},
+		MediumCompetitive: {
+			BluffRate: CaptainMediumBluffRate, ChallengeRate: CaptainMediumChallengeRate, AlwaysBlock: true,
+			ActionName: "Steal", ActionPreference: StealMediumPreference,
+			CharacterBluffRate: CaptainMediumBluffRate, CharacterBlockRate: CaptainMediumBlockRate,
+			TargetStrategy: RichestTarget, UseTargetStrategy: true,
+		},
+		LowCompetitive: {
+			BluffRate: CaptainLowBluffRate, ChallengeRate: CaptainLowChallengeRate, AlwaysBlock: false,
+			ActionName: "Steal", ActionPreference: StealLowPreference,
+			CharacterBluffRate: CaptainLowBluffRate, CharacterBlockRate: CaptainLowBlockRate,
+			TargetStrategy: RandomTarget, UseTargetStrategy: true,
+		},
+	},
+	Ambassador: {
+		HighCompetitive: {
+			BluffRate: AmbassadorHighBluffRate, ChallengeRate: AmbassadorHighChallengeRate, AlwaysBlock: true,
+			ActionName: "Exchange", ActionPreference: ExchangeHighPreference,
+			CharacterBluffRate: AmbassadorHighBluffRate, CharacterBlockRate: AmbassadorHighBlockRate,
+		},
+		MediumCompetitive: {
+			BluffRate: AmbassadorMediumBluffRate, ChallengeRate: AmbassadorMediumChallengeRate, AlwaysBlock: true,
+			ActionName: "Exchange", ActionPreference: ExchangeMediumPreference,
+			CharacterBluffRate: AmbassadorMediumBluffRate, CharacterBlockRate: AmbassadorMediumBlockRate,
+		},
+		LowCompetitive: {
+			BluffRate: AmbassadorLowBluffRate, ChallengeRate: AmbassadorLowChallengeRate, AlwaysBlock: false,
+			ActionName: "Exchange", ActionPreference: ExchangeLowPreference,
+			CharacterBluffRate: AmbassadorLowBluffRate, CharacterBlockRate: AmbassadorLowBlockRate,
+		},
+	},
+	Contessa: {
+		HighCompetitive: {
+			BluffRate: ContessaHighBluffRate, ChallengeRate: ContessaHighChallengeRate, AlwaysBlock: true,
+			ActionName: "Income", ActionPreference: IncomeHighPreference,
+			CharacterBluffRate: ContessaHighBluffRate, CharacterBlockRate: ContessaHighBlockRate,
+		},
+		MediumCompetitive: {
+			BluffRate: ContessaMediumBluffRate, ChallengeRate: ContessaMediumChallengeRate, AlwaysBlock: true,
+			ActionName: "Income", ActionPreference: IncomeMediumPreference,
+			CharacterBluffRate: ContessaMediumBluffRate, CharacterBlockRate: ContessaMediumBlockRate,
+		},
+		LowCompetitive: {
+			BluffRate: ContessaLowBluffRate, ChallengeRate: ContessaLowChallengeRate, AlwaysBlock: false,
+			ActionName: "Income", ActionPreference: IncomeLowPreference,
+			CharacterBluffRate: ContessaLowBluffRate, CharacterBlockRate: ContessaLowBlockRate,
+		},
+	},
+}
+
+// createCharacterStrategy creates a strategy for a specific character and level using config
+func createCharacterStrategy(character string, level CompetitiveLevel) *EnhancedAIStrategy {
+	config, exists := strategyConfigs[character][level]
+	if !exists {
+		// Fallback to basic strategy
+		return NewBasicAIStrategy(DefaultBluffRate, DefaultChallengeRate, true)
+	}
+
+	strategy := &EnhancedAIStrategy{
+		Level: level,
+		CharacterPreferences: []CharacterPreference{
+			{Character: character, PreferenceLevel: 0.9},
+		},
+		ActionPreferences:   make(map[string]float64),
+		TargetSelection:     make(map[string]TargetStrategy),
+		CharacterBluffRates: make(map[string]float64),
+		CharacterBlockRates: make(map[string]float64),
+	}
+
+	// Apply configuration
+	strategy.BluffRate = config.BluffRate
+	strategy.ChallengeRate = config.ChallengeRate
+	strategy.AlwaysBlock = config.AlwaysBlock
+	strategy.ActionPreferences[config.ActionName] = config.ActionPreference
+	strategy.CharacterBluffRates[character] = config.CharacterBluffRate
+	if config.CharacterBlockRate > 0 {
+		strategy.CharacterBlockRates[character] = config.CharacterBlockRate
+	}
+	if config.UseTargetStrategy {
+		strategy.TargetSelection[config.ActionName] = config.TargetStrategy
+	}
+
+	return strategy
+}
+
 // NewBasicAIStrategy creates a simple strategy with the given parameters
 func NewBasicAIStrategy(bluffRate, challengeRate float64, alwaysBlock bool) *EnhancedAIStrategy {
 	return &EnhancedAIStrategy{
@@ -62,220 +205,27 @@ func NewBasicAIStrategy(bluffRate, challengeRate float64, alwaysBlock bool) *Enh
 
 // CreateDukeStrategy creates an AI strategy focused on the Duke character
 func CreateDukeStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
-	strategy := &EnhancedAIStrategy{
-		Level: level,
-		CharacterPreferences: []CharacterPreference{
-			{Character: Duke, PreferenceLevel: 0.9},
-		},
-		ActionPreferences:   make(map[string]float64),
-		TargetSelection:     make(map[string]TargetStrategy),
-		CharacterBluffRates: make(map[string]float64),
-		CharacterBlockRates: make(map[string]float64),
-	}
-
-	// Set up strategy parameters based on competitive level
-	switch level {
-	case HighCompetitive:
-		strategy.BluffRate = DukeHighBluffRate
-		strategy.ChallengeRate = DukeHighChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Tax"] = TaxHighPreference
-		strategy.CharacterBluffRates[Duke] = DukeHighBluffRate
-		strategy.CharacterBlockRates[Duke] = DukeHighBlockRate
-
-	case MediumCompetitive:
-		strategy.BluffRate = DukeMediumBluffRate
-		strategy.ChallengeRate = DukeMediumChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Tax"] = TaxMediumPreference
-		strategy.CharacterBluffRates[Duke] = DukeMediumBluffRate
-		strategy.CharacterBlockRates[Duke] = DukeMediumBlockRate
-
-	case LowCompetitive:
-		strategy.BluffRate = DukeLowBluffRate
-		strategy.ChallengeRate = DukeLowChallengeRate
-		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Tax"] = TaxLowPreference
-		strategy.CharacterBluffRates[Duke] = DukeLowBluffRate
-		strategy.CharacterBlockRates[Duke] = DukeLowBlockRate
-	}
-
-	return strategy
+	return createCharacterStrategy(Duke, level)
 }
 
 // CreateAssassinStrategy creates an AI strategy focused on the Assassin character
 func CreateAssassinStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
-	strategy := &EnhancedAIStrategy{
-		Level: level,
-		CharacterPreferences: []CharacterPreference{
-			{Character: Assassin, PreferenceLevel: 0.9},
-		},
-		ActionPreferences:   make(map[string]float64),
-		TargetSelection:     make(map[string]TargetStrategy),
-		CharacterBluffRates: make(map[string]float64),
-		CharacterBlockRates: make(map[string]float64),
-	}
-
-	// Set up strategy parameters based on competitive level
-	switch level {
-	case HighCompetitive:
-		strategy.BluffRate = AssassinHighBluffRate
-		strategy.ChallengeRate = AssassinHighChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Assassinate"] = AssassinateHighPreference
-		strategy.CharacterBluffRates[Assassin] = AssassinHighBluffRate
-		strategy.TargetSelection["Assassinate"] = ThreatTarget
-
-	case MediumCompetitive:
-		strategy.BluffRate = AssassinMediumBluffRate
-		strategy.ChallengeRate = AssassinMediumChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Assassinate"] = AssassinateMediumPreference
-		strategy.CharacterBluffRates[Assassin] = AssassinMediumBluffRate
-		strategy.TargetSelection["Assassinate"] = StrongestTarget
-
-	case LowCompetitive:
-		strategy.BluffRate = AssassinLowBluffRate
-		strategy.ChallengeRate = AssassinLowChallengeRate
-		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Assassinate"] = AssassinateLowPreference
-		strategy.CharacterBluffRates[Assassin] = AssassinLowBluffRate
-		strategy.TargetSelection["Assassinate"] = RandomTarget
-	}
-
-	return strategy
+	return createCharacterStrategy(Assassin, level)
 }
 
 // CreateCaptainStrategy creates an AI strategy focused on the Captain character
 func CreateCaptainStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
-	strategy := &EnhancedAIStrategy{
-		Level: level,
-		CharacterPreferences: []CharacterPreference{
-			{Character: Captain, PreferenceLevel: 0.9},
-		},
-		ActionPreferences:   make(map[string]float64),
-		TargetSelection:     make(map[string]TargetStrategy),
-		CharacterBluffRates: make(map[string]float64),
-		CharacterBlockRates: make(map[string]float64),
-	}
-
-	// Set up strategy parameters based on competitive level
-	switch level {
-	case HighCompetitive:
-		strategy.BluffRate = CaptainHighBluffRate
-		strategy.ChallengeRate = CaptainHighChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Steal"] = StealHighPreference
-		strategy.CharacterBluffRates[Captain] = CaptainHighBluffRate
-		strategy.CharacterBlockRates[Captain] = CaptainHighBlockRate
-		strategy.TargetSelection["Steal"] = RichestTarget
-
-	case MediumCompetitive:
-		strategy.BluffRate = CaptainMediumBluffRate
-		strategy.ChallengeRate = CaptainMediumChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Steal"] = StealMediumPreference
-		strategy.CharacterBluffRates[Captain] = CaptainMediumBluffRate
-		strategy.CharacterBlockRates[Captain] = CaptainMediumBlockRate
-		strategy.TargetSelection["Steal"] = RichestTarget
-
-	case LowCompetitive:
-		strategy.BluffRate = CaptainLowBluffRate
-		strategy.ChallengeRate = CaptainLowChallengeRate
-		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Steal"] = StealLowPreference
-		strategy.CharacterBluffRates[Captain] = CaptainLowBluffRate
-		strategy.CharacterBlockRates[Captain] = CaptainLowBlockRate
-		strategy.TargetSelection["Steal"] = RandomTarget
-	}
-
-	return strategy
+	return createCharacterStrategy(Captain, level)
 }
 
 // CreateAmbassadorStrategy creates an AI strategy focused on the Ambassador character
 func CreateAmbassadorStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
-	strategy := &EnhancedAIStrategy{
-		Level: level,
-		CharacterPreferences: []CharacterPreference{
-			{Character: Ambassador, PreferenceLevel: 0.9},
-		},
-		ActionPreferences:   make(map[string]float64),
-		TargetSelection:     make(map[string]TargetStrategy),
-		CharacterBluffRates: make(map[string]float64),
-		CharacterBlockRates: make(map[string]float64),
-	}
-
-	// Set up strategy parameters based on competitive level
-	switch level {
-	case HighCompetitive:
-		strategy.BluffRate = AmbassadorHighBluffRate
-		strategy.ChallengeRate = AmbassadorHighChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Exchange"] = ExchangeHighPreference
-		strategy.CharacterBluffRates[Ambassador] = AmbassadorHighBluffRate
-		strategy.CharacterBlockRates[Ambassador] = AmbassadorHighBlockRate
-
-	case MediumCompetitive:
-		strategy.BluffRate = AmbassadorMediumBluffRate
-		strategy.ChallengeRate = AmbassadorMediumChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Exchange"] = ExchangeMediumPreference
-		strategy.CharacterBluffRates[Ambassador] = AmbassadorMediumBluffRate
-		strategy.CharacterBlockRates[Ambassador] = AmbassadorMediumBlockRate
-
-	case LowCompetitive:
-		strategy.BluffRate = AmbassadorLowBluffRate
-		strategy.ChallengeRate = AmbassadorLowChallengeRate
-		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Exchange"] = ExchangeLowPreference
-		strategy.CharacterBluffRates[Ambassador] = AmbassadorLowBluffRate
-		strategy.CharacterBlockRates[Ambassador] = AmbassadorLowBlockRate
-	}
-
-	return strategy
+	return createCharacterStrategy(Ambassador, level)
 }
 
 // CreateContessaStrategy creates an AI strategy focused on the Contessa character
 func CreateContessaStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
-	strategy := &EnhancedAIStrategy{
-		Level: level,
-		CharacterPreferences: []CharacterPreference{
-			{Character: Contessa, PreferenceLevel: 0.9},
-		},
-		ActionPreferences:   make(map[string]float64),
-		TargetSelection:     make(map[string]TargetStrategy),
-		CharacterBluffRates: make(map[string]float64),
-		CharacterBlockRates: make(map[string]float64),
-	}
-
-	// Set up strategy parameters based on competitive level
-	switch level {
-	case HighCompetitive:
-		strategy.BluffRate = ContessaHighBluffRate
-		strategy.ChallengeRate = ContessaHighChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Income"] = IncomeHighPreference
-		strategy.CharacterBluffRates[Contessa] = ContessaHighBluffRate
-		strategy.CharacterBlockRates[Contessa] = ContessaHighBlockRate
-
-	case MediumCompetitive:
-		strategy.BluffRate = ContessaMediumBluffRate
-		strategy.ChallengeRate = ContessaMediumChallengeRate
-		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Income"] = IncomeMediumPreference
-		strategy.CharacterBluffRates[Contessa] = ContessaMediumBluffRate
-		strategy.CharacterBlockRates[Contessa] = ContessaMediumBlockRate
-
-	case LowCompetitive:
-		strategy.BluffRate = ContessaLowBluffRate
-		strategy.ChallengeRate = ContessaLowChallengeRate
-		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Income"] = IncomeLowPreference
-		strategy.CharacterBluffRates[Contessa] = ContessaLowBluffRate
-		strategy.CharacterBlockRates[Contessa] = ContessaLowBlockRate
-	}
-
-	return strategy
+	return createCharacterStrategy(Contessa, level)
 }
 
 // CreateRandomStrategy creates a strategy with a random character preference

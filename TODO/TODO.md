@@ -106,12 +106,10 @@ details, and intermediate status messages. Only displays the progress bar and fi
 
 ---
 
-### FEAT-8: Separate strategy creation from repetitive code
-**File:** `game/ai_strategy.go`
-
-The five `Create*Strategy` functions (Duke, Assassin, Captain, Ambassador, Contessa)
-share ~80% identical structure. Refactor into a single factory function parameterized
-by character name and a config table.
+### ~~FEAT-8: Separate strategy creation from repetitive code~~ FIXED
+Created strategyConfigs map with CharacterStrategyConfig for all character/level combinations.
+Replaced five repetitive Create*Strategy functions with single createCharacterStrategy factory.
+Reduced code duplication from ~200 lines to ~100 lines, improved maintainability.
 
 ---
 
@@ -126,19 +124,28 @@ All strategy functions and threat calculations now use these constants.
 
 ---
 
-### FEAT-10: Add game replay / verbose single-game mode
-Add a mode that runs a single game with detailed turn-by-turn output showing every
-action, challenge, block, and card exchange. Useful for debugging and verifying game
-logic.
+### ~~FEAT-10: Add game replay / verbose single-game mode~~ FIXED
+Added --replay flag that runs a single game with detailed turn-by-turn output.
+Shows initial game state, player strategies, every action with challenges/blocks,
+and final results. Useful for debugging game logic.
 
 ---
 
-### FEAT-11: Medium-competitive AI exchange is random, not strategic
-**File:** `game/enhanced_player.go:611-643`
+### ~~FEAT-11: Medium-competitive AI exchange is random, not strategic~~ FIXED
+Medium competitive AIs now use strategic card exchange with simplified scoring:
+- Prefers Duke (1.5) and Assassin (1.2) over other characters
+- Captain (0.8), Contessa (0.7), Ambassador (0.5) have lower priorities
+- Adds 0.8 random variance (more than high competitive's 0.2)
+Low competitive AI remains fully random for contrast.
 
-Medium and Low competitive AIs use a fully random card exchange for the Ambassador
-ability. Medium AIs should have at least some preference for keeping useful cards
-(e.g., Duke, Assassin) rather than pure randomness.
+---
+
+### FEAT-8: Separate strategy creation from repetitive code
+**File:** `game/ai_strategy.go`
+
+The five `Create*Strategy` functions (Duke, Assassin, Captain, Ambassador, Contessa)
+share ~80% identical structure. Refactor into a single factory function parameterized
+by character name and a config table.
 
 ---
 

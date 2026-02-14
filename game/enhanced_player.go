@@ -617,7 +617,67 @@ func (p *EnhancedAIPlayer) ChooseExchange(draw []Card) []Card {
 		return returnToDeck
 	}
 
-	// For medium and low competitive, use simpler logic
+	// For medium competitive, use simplified strategic logic
+	if p.Strategy.Level == MediumCompetitive {
+		// Score cards with simpler heuristics
+		scores := make([]float64, totalCards)
+
+		for i, card := range allCards {
+			scores[i] = 1.0 // Base score
+
+			// Simple bonuses for generally strong cards
+			switch card.Name {
+			case Duke:
+				scores[i] += 1.5 // Duke is very useful (Tax action)
+			case Assassin:
+				scores[i] += 1.2 // Assassin is powerful
+			case Captain:
+				scores[i] += 0.8 // Captain is decent (Steal)
+			case Contessa:
+				scores[i] += 0.7 // Contessa blocks assassinations
+			case Ambassador:
+				scores[i] += 0.5 // Ambassador is situational
+			}
+
+			// Add more randomness than high competitive
+			scores[i] += p.RNG.Float64() * 0.8
+		}
+
+		// Sort cards by score
+		indices := make([]int, totalCards)
+		for i := range indices {
+			indices[i] = i
+		}
+
+		// Simple bubble sort
+		for i := 0; i < totalCards; i++ {
+			for j := i + 1; j < totalCards; j++ {
+				if scores[indices[i]] < scores[indices[j]] {
+					indices[i], indices[j] = indices[j], indices[i]
+				}
+			}
+		}
+
+		// Select top cards to keep
+		keep := make([]Card, keepCount)
+		returnToDeck := make([]Card, totalCards-keepCount)
+
+		for i := 0; i < totalCards; i++ {
+			if i < keepCount {
+				keep[i] = allCards[indices[i]]
+			} else {
+				returnToDeck[i-keepCount] = allCards[indices[i]]
+			}
+		}
+
+		// Update player's influences with kept cards
+		p.Influences = keep
+
+		// Return the cards to be put back in the deck
+		return returnToDeck
+	}
+
+	// For low competitive, use fully random logic
 	// Create a shuffled index array
 	indices := make([]int, totalCards)
 	for i := range indices {

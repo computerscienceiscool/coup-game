@@ -25,6 +25,7 @@ var (
 	aiMode           = flag.String("ai", "mixed", "AI mode: original, mixed, high, medium, low")
 	characterBalance = flag.Bool("balance", false, "Enable character balancing (equal distribution)")
 	testComp         = flag.Int("test-comp", 0, "Run competitiveness test with specified number of games")
+	replay           = flag.Bool("replay", false, "Run a single game with detailed turn-by-turn output")
 )
 
 func main() {
@@ -91,6 +92,12 @@ func main() {
 	// If test-comp flag is set, run competitiveness test and exit
 	if *testComp > 0 {
 		testCompetitiveLevels(*testComp, *seed)
+		return
+	}
+
+	// If replay flag is set, run a single game with detailed output and exit
+	if *replay {
+		runReplayGame(*seed, *aiMode)
 		return
 	}
 
@@ -488,4 +495,150 @@ func printCharacterStats(charStats map[string]int, total int) {
 			fmt.Printf("  %s: %d occurrences (0.00%%)\n", stat.name, stat.wins)
 		}
 	}
+}
+
+// runReplayGame runs a single game with detailed turn-by-turn output
+func runReplayGame(seed int64, aiMode string) {
+	fmt.Println("=== COUP GAME REPLAY MODE ===")
+	fmt.Printf("Seed: %d\n", seed)
+	fmt.Printf("AI Mode: %s\n\n", aiMode)
+
+	// Determine competitive level
+	var competitiveLevel game.CompetitiveLevel
+	switch aiMode {
+	case "high":
+		competitiveLevel = game.HighCompetitive
+	case "medium":
+		competitiveLevel = game.MediumCompetitive
+	case "low":
+		competitiveLevel = game.LowCompetitive
+	}
+
+	// Create game based on AI mode
+	var g *game.Game
+	var err error
+
+	switch aiMode {
+	case "original":
+		g, err = game.NewGameWithOriginalAI(4, seed)
+	case "mixed":
+		g, err = game.NewGameWithMixedAIs(4, seed)
+	default:
+		g, err = game.NewGameWithAITypes(4, nil, competitiveLevel, seed)
+	}
+
+	if err != nil {
+		fmt.Printf("Error creating game: %v\n", err)
+		return
+	}
+
+	// Display initial game state
+	fmt.Println("INITIAL GAME STATE")
+	fmt.Println("==================")
+	for i, p := range g.Players {
+		cards := make([]string, 0)
+		for _, card := range p.GetInfluences() {
+			cards = append(cards, card.Name)
+		}
+
+		// Show player type
+		playerType := "Unknown"
+		if ep, ok := p.(*game.EnhancedAIPlayer); ok {
+			switch ep.Strategy.Level {
+			case game.LowCompetitive:
+				playerType = "Low Competitive"
+			case game.MediumCompetitive:
+				playerType = "Medium Competitive"
+			case game.HighCompetitive:
+				playerType = "High Competitive"
+			}
+			if len(ep.Strategy.CharacterPreferences) > 0 {
+				playerType += " (" + ep.Strategy.CharacterPreferences[0].Character + ")"
+			}
+		} else if _, ok := p.(*game.AIPlayer); ok {
+			playerType = "Original AI"
+		}
+
+		fmt.Printf("Player %d: %s\n", i+1, playerType)
+		fmt.Printf("  Coins: %d\n", p.GetCoins())
+		fmt.Printf("  Cards: %v\n\n", cards)
+	}
+
+	// Run game turn by turn with detailed output
+	fmt.Println("GAME PLAY")
+	fmt.Println("=========")
+
+	for !g.Finished {
+		currentPlayer := g.Players[g.CurrentPlayer]
+		fmt.Printf("\n--- Turn %d: Player %d's turn ---\n", g.Turn, g.CurrentPlayer+1)
+		fmt.Printf("Player %d has %d coins and %d influences\n",
+			g.CurrentPlayer+1, currentPlayer.GetCoins(), len(currentPlayer.GetInfluences()))
+
+		// Record action count before turn
+		actionsBefore := len(g.ActionLog)
+
+		// Execute the turn
+		g.ExecuteTurn()
+
+		// Show action details from action log
+		if len(g.ActionLog) > actionsBefore {
+			lastAction := g.ActionLog[len(g.ActionLog)-1]
+
+			fmt.Printf("Player %d performs: %s", lastAction.PlayerID+1, lastAction.Action)
+			if lastAction.Target != -1 {
+				fmt.Printf(" targeting Player %d", lastAction.Target+1)
+			}
+			fmt.Println()
+
+			if lastAction.Challenged {
+				if lastAction.Success {
+					fmt.Println("  → Action was challenged but the player had the card!")
+				} else {
+					fmt.Println("  → Action was challenged and failed!")
+				}
+			}
+			if lastAction.Blocker != -1 {
+				if lastAction.Success {
+					fmt.Printf("  → Player %d attempted to block", lastAction.Blocker+1)
+					if lastAction.BlockingCharacter != "" {
+						fmt.Printf(" with %s", lastAction.BlockingCharacter)
+					}
+					fmt.Println(" but the block was challenged!")
+				} else {
+					fmt.Printf("  → Player %d blocked with %s!\n", lastAction.Blocker+1, lastAction.BlockingCharacter)
+				}
+			}
+			if lastAction.Success && lastAction.Blocker == -1 && !lastAction.Challenged {
+				fmt.Println("  → Action succeeded without opposition!")
+			}
+		}
+
+		// Show remaining players
+		alivePlayers := 0
+		for i, p := range g.Players {
+			if p.IsAlive() {
+				alivePlayers++
+				influences := len(p.GetInfluences())
+				fmt.Printf("  Player %d: %d influences, %d coins\n",
+					i+1, influences, p.GetCoins())
+			}
+		}
+
+		if alivePlayers <= 1 {
+			break
+		}
+	}
+
+	// Display final result
+	fmt.Println("\n=== GAME OVER ===")
+	winner := g.Winner
+	fmt.Printf("Winner: Player %d\n", winner.GetID()+1)
+	fmt.Printf("Total turns: %d\n", g.Turn)
+
+	winnerCards := make([]string, 0)
+	for _, card := range winner.GetInfluences() {
+		winnerCards = append(winnerCards, card.Name)
+	}
+	fmt.Printf("Winner's remaining cards: %v\n", winnerCards)
+	fmt.Printf("Winner's coins: %d\n", winner.GetCoins())
 }
