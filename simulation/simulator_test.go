@@ -69,7 +69,11 @@ func TestMetricsCollection(t *testing.T) {
 			PlayerCount:      2,
 			WinnerID:         0,
 			WinnerCharacters: []string{"Duke", "Captain"},
-			TotalTurns:       10,
+			PlayerStartingCards: map[int][]string{
+				0: {"Duke", "Captain"},
+				1: {"Assassin", "Contessa"},
+			},
+			TotalTurns: 10,
 		},
 	}
 	// Process the results

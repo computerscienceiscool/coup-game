@@ -3,6 +3,7 @@ package simulation
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,14 +23,15 @@ type Config struct {
 
 // GameResult stores the outcome of a single game
 type GameResult struct {
-	ID               int
-	PlayerCount      int
-	WinnerID         int
-	WinnerCharacters []string
-	TotalTurns       int
-	Actions          []game.ActionLog
-	StartTime        time.Time
-	EndTime          time.Time
+	ID                  int
+	PlayerCount         int
+	WinnerID            int
+	WinnerCharacters    []string
+	PlayerStartingCards map[int][]string // Starting characters for each player
+	TotalTurns          int
+	Actions             []game.ActionLog
+	StartTime           time.Time
+	EndTime             time.Time
 }
 
 // SimulationResults aggregates results from multiple games
@@ -149,6 +151,16 @@ func (s *Simulator) worker(workerID int) {
 			continue
 		}
 
+		// Collect all players' starting cards before the game runs
+		playerStartingCards := make(map[int][]string)
+		for _, player := range g.Players {
+			cards := make([]string, 0)
+			for _, card := range player.GetInfluences() {
+				cards = append(cards, card.Name)
+			}
+			playerStartingCards[player.GetID()] = cards
+		}
+
 		startTime := time.Now()
 		winner := g.RunToCompletion()
 		endTime := time.Now()
@@ -161,14 +173,15 @@ func (s *Simulator) worker(workerID int) {
 
 		// Create game result
 		result := GameResult{
-			ID:               gameID,
-			PlayerCount:      playerCount,
-			WinnerID:         winner.GetID(),
-			WinnerCharacters: winnerChars,
-			TotalTurns:       g.Turn,
-			Actions:          g.ActionLog,
-			StartTime:        startTime,
-			EndTime:          endTime,
+			ID:                  gameID,
+			PlayerCount:         playerCount,
+			WinnerID:            winner.GetID(),
+			WinnerCharacters:    winnerChars,
+			PlayerStartingCards: playerStartingCards,
+			TotalTurns:          g.Turn,
+			Actions:             g.ActionLog,
+			StartTime:           startTime,
+			EndTime:             endTime,
 		}
 
 		// Send result
@@ -186,10 +199,17 @@ func (s *Simulator) worker(workerID int) {
 func (s *Simulator) determinePlayerCount(gameID int, rng *rand.Rand) int {
 	// If specific counts are configured, use them
 	if len(s.Config.GamesPerPlayerCount) > 0 {
+		// Sort keys for deterministic iteration order
+		counts := make([]int, 0, len(s.Config.GamesPerPlayerCount))
+		for count := range s.Config.GamesPerPlayerCount {
+			counts = append(counts, count)
+		}
+		sort.Ints(counts)
+
 		// Create buckets for each player count
 		totalAssigned := 0
-		for count, games := range s.Config.GamesPerPlayerCount {
-			totalAssigned += games
+		for _, count := range counts {
+			totalAssigned += s.Config.GamesPerPlayerCount[count]
 			if gameID < totalAssigned {
 				return count
 			}

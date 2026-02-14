@@ -1,7 +1,6 @@
 package simulation
 
 import (
-	"math"
 	"sort"
 
 	"github.com/computerscienceiscool/coup-game/game"
@@ -15,7 +14,8 @@ type MetricsCollector struct {
 	AverageGameLength  float64
 
 	// Character stats
-	CharacterStats map[string]*CharacterStats
+	CharacterStats             map[string]*CharacterStats
+	CharacterWinsByPlayerCount map[int]map[string]int // Wins per character per player count
 
 	// Composite rankings
 	RankedCharacters []CharacterRanking
@@ -34,8 +34,9 @@ type CharacterRanking struct {
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector() *MetricsCollector {
 	collector := &MetricsCollector{
-		GamesByPlayerCount: make(map[int]int),
-		CharacterStats:     make(map[string]*CharacterStats),
+		GamesByPlayerCount:         make(map[int]int),
+		CharacterStats:             make(map[string]*CharacterStats),
+		CharacterWinsByPlayerCount: make(map[int]map[string]int),
 	}
 
 	// Initialize stats for each character
@@ -77,6 +78,33 @@ func (m *MetricsCollector) ProcessGameResults(results []GameResult) {
 			if stats, exists := m.CharacterStats[charName]; exists {
 				stats.GamesWon++
 			}
+
+			// Track wins by player count
+			if m.CharacterWinsByPlayerCount[result.PlayerCount] == nil {
+				m.CharacterWinsByPlayerCount[result.PlayerCount] = make(map[string]int)
+			}
+			m.CharacterWinsByPlayerCount[result.PlayerCount][charName]++
+		}
+
+		// Track which characters participated in this game
+		seenCharacters := make(map[string]bool)
+		for _, playerCards := range result.PlayerStartingCards {
+			for _, charName := range playerCards {
+				seenCharacters[charName] = true
+			}
+		}
+		// Increment GamesPlayed for each unique character that appeared
+		for charName := range seenCharacters {
+			if stats, exists := m.CharacterStats[charName]; exists {
+				stats.GamesPlayed++
+			}
+		}
+
+		// Track survival time for winner's characters (they survived the full game)
+		for _, charName := range result.WinnerCharacters {
+			if stats, exists := m.CharacterStats[charName]; exists {
+				stats.TotalSurvivalTurns += result.TotalTurns
+			}
 		}
 
 		// Process each action for detailed metrics
@@ -88,14 +116,8 @@ func (m *MetricsCollector) ProcessGameResults(results []GameResult) {
 		m.AverageGameLength = float64(totalTurns) / float64(m.TotalGames)
 	}
 
-	// Calculate character participation rate
-	// This requires knowing which characters were in each game
-	// For a simple approximation, assume equal distribution
-	cardsPerCharacter := 3 // 3 copies of each character
-	for _, stats := range m.CharacterStats {
-		// Rough estimate: character appears in ~3/15 = 20% of total player-games
-		stats.GamesPlayed = m.TotalGames * cardsPerCharacter / len(game.GetCharacters())
-	}
+	// Note: Character GamesPlayed is now tracked during game processing above,
+	// not estimated. Each character's participation is recorded from PlayerStartingCards.
 
 	// Generate rankings
 	m.calculateRankings()
@@ -165,14 +187,12 @@ func (m *MetricsCollector) processGameActions(result GameResult) {
 			case "Foreign Aid":
 				blockingChar = game.Duke
 			case "Steal":
-				// Either Captain or Ambassador could block
-				// For simplicity, credit both equally
-				m.CharacterStats[game.Captain].Blocks++
-				m.CharacterStats[game.Ambassador].Blocks++
-
-				if !action.Success {
-					m.CharacterStats[game.Captain].BlockSuccesses++
-					m.CharacterStats[game.Ambassador].BlockSuccesses++
+				// Use the actual blocking character claimed
+				if action.BlockingCharacter != "" {
+					blockingChar = action.BlockingCharacter
+				} else {
+					// Fallback to Captain if not specified (for backwards compatibility)
+					blockingChar = game.Captain
 				}
 			case "Assassinate":
 				blockingChar = game.Contessa
@@ -266,13 +286,18 @@ func (m *MetricsCollector) GetStatisticsByPlayerCount() map[int]*PlayerCountStat
 			CharacterWinRates: make(map[string]float64),
 		}
 
-		// Set placeholder values
+		// Calculate actual average game length for this player count
+		// This is still approximated, would need per-game tracking for exact values
 		stats.AverageGameLength = m.AverageGameLength * (1 + 0.1*float64(playerCount-3))
 
-		// Character win rates vary slightly by player count (simplified model)
-		for _, charRank := range m.RankedCharacters {
-			variance := (math.Cos(float64(playerCount)) + 1) * 0.1
-			stats.CharacterWinRates[charRank.Name] = charRank.WinRate * (1 + variance)
+		// Use actual character win data for this player count
+		if winsByChar, exists := m.CharacterWinsByPlayerCount[playerCount]; exists {
+			for charName, wins := range winsByChar {
+				// Calculate win rate as wins / games for this player count
+				if gameCount > 0 {
+					stats.CharacterWinRates[charName] = float64(wins) / float64(gameCount)
+				}
+			}
 		}
 
 		result[playerCount] = stats

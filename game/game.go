@@ -20,13 +20,14 @@ type Game struct {
 
 // ActionLog records details of each action taken
 type ActionLog struct {
-	Turn       int
-	PlayerID   int
-	Action     string
-	Target     int // -1 if no target
-	Success    bool
-	Challenged bool
-	Blocker    int // -1 if not blocked
+	Turn              int
+	PlayerID          int
+	Action            string
+	Target            int    // -1 if no target
+	Success           bool
+	Challenged        bool
+	Blocker           int    // -1 if not blocked
+	BlockingCharacter string // Character claimed by blocker (empty if not blocked)
 }
 
 // GameState provides a read-only view of the game state for AI decision making
@@ -94,12 +95,39 @@ func (g *Game) Initialize() {
 	}
 }
 
+// MaxTurns is the maximum number of turns before a game is force-ended.
+const MaxTurns = 500
+
 // RunToCompletion runs the game until a winner is determined
 func (g *Game) RunToCompletion() Player {
 	for !g.Finished {
 		g.ExecuteTurn()
+		if g.Turn >= MaxTurns {
+			g.forceEnd()
+			break
+		}
 	}
 	return g.Winner
+}
+
+// forceEnd declares the player with the most influence (ties broken by coins) the winner.
+func (g *Game) forceEnd() {
+	var best Player
+	bestScore := -1
+
+	for _, p := range g.Players {
+		if !p.IsAlive() {
+			continue
+		}
+		score := p.InfluenceCount()*1000 + p.GetCoins()
+		if score > bestScore {
+			bestScore = score
+			best = p
+		}
+	}
+
+	g.Finished = true
+	g.Winner = best
 }
 
 // ExecuteTurn executes a single turn of the game
@@ -163,6 +191,13 @@ func (g *Game) ExecuteTurn() {
 
 // ResolveAction handles the challenge and block resolution process
 func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool {
+	// Pay upfront costs before challenge/block phase (per Coup rules)
+	if action.Name() == "Assassinate" {
+		if err := player.RemoveCoins(3); err != nil {
+			return false
+		}
+	}
+
 	// Check if action can be challenged
 	if action.CanBeChallenged() {
 		// Allow other players to challenge
@@ -209,6 +244,7 @@ func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool 
 
 				// Get the blocking character
 				blockingCharacter := opponent.ChooseBlockingCharacter(action)
+				log.BlockingCharacter = blockingCharacter.Name
 
 				// Block can be challenged
 				blockChallenged := false
@@ -232,8 +268,9 @@ func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool 
 
 						if blockChallengeSuccess {
 							// Block challenge succeeded, block fails, action proceeds
-							log.Blocker = -1 // Reset blocker as block failed
-							break            // Only one successful challenge needed
+							log.Blocker = -1           // Reset blocker as block failed
+							log.BlockingCharacter = "" // Clear blocking character as block failed
+							break                      // Only one successful challenge needed
 						} else {
 							// Block challenge failed, block succeeds, action fails
 							return false

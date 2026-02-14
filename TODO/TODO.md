@@ -28,39 +28,29 @@ the player with most influence (ties broken by coins) the winner.
 
 ---
 
+## Bugs (Fixed)
+
+### ~~BUG-8: Per-player-count win rates are fabricated, not measured~~ FIXED
+Added CharacterWinsByPlayerCount map to track actual wins per character per player count.
+GetStatisticsByPlayerCount() now calculates real win rates instead of using math.Cos() fabrication.
+
+---
+
+### ~~BUG-9: Character `GamesPlayed` is estimated, not tracked~~ FIXED
+Added PlayerStartingCards field to GameResult to track which characters each player started with.
+GamesPlayed is now incremented based on actual character participation, not estimated.
+
+---
+
+### ~~BUG-10: Steal blocks double-count Captain and Ambassador~~ FIXED
+Added BlockingCharacter field to ActionLog to record which character was actually claimed.
+Steal blocks now credit only the actual blocking character (Captain or Ambassador), not both.
+
+---
+
 ## Bugs (Open)
 
-### BUG-8: Per-player-count win rates are fabricated, not measured
-**File:** `simulation/metrics.go:256-282`
-
-`GetStatisticsByPlayerCount()` doesn't track actual per-player-count character win
-rates. Instead it applies `math.Cos(float64(playerCount))` as a "variance" factor to
-the global win rate. This produces meaningless numbers in the player_count_analysis.csv.
-
-**Fix:** Actually track character wins per player count during `ProcessGameResults`.
-
----
-
-### BUG-9: Character `GamesPlayed` is estimated, not tracked
-**File:** `simulation/metrics.go:93-98`
-
-Instead of tracking which characters appeared in each game, `GamesPlayed` is set to
-`totalGames * 3 / 5` for every character. This makes all character participation counts
-identical and only approximate.
-
-**Fix:** Track actual character participation per game using the winner's cards and/or
-initial card deals (would require storing deal info in `GameResult`).
-
----
-
-### BUG-10: Steal blocks double-count Captain and Ambassador
-**File:** `simulation/metrics.go:170-176`
-
-When a Steal is blocked, both Captain and Ambassador get credit for the block even
-though only one character was actually claimed. This inflates block stats for both
-characters.
-
-**Fix:** Record the actual blocking character claimed in `ActionLog` and use that.
+None remaining!
 
 ---
 
@@ -77,10 +67,9 @@ determine whether character win rate differences are statistically significant.
 
 ---
 
-### FEAT-3: Track card information in GameResult
-Currently `GameResult` only stores the winner's remaining cards. Tracking which cards
-each player was dealt would enable accurate per-character statistics instead of the
-current estimates.
+### ~~FEAT-3: Track card information in GameResult~~ FIXED
+Added PlayerStartingCards map[int][]string field to GameResult to track which cards
+each player was dealt at game start. This enables accurate per-character statistics.
 
 ---
 
@@ -96,12 +85,9 @@ Missing tests:
 
 ---
 
-### FEAT-5: Record actual blocking character in ActionLog
-**File:** `game/game.go:22-30`
-
-`ActionLog.Blocker` stores the blocker's player ID but not which character they claimed
-to block with. Add a `BlockingCharacter string` field to enable accurate block
-statistics.
+### ~~FEAT-5: Record actual blocking character in ActionLog~~ FIXED
+Added BlockingCharacter string field to ActionLog. The field is populated when a block
+occurs and cleared if the block is successfully challenged.
 
 ---
 
@@ -164,10 +150,6 @@ Profiles can be analyzed with `go tool pprof`.
 
 ---
 
-### FEAT-13: Survival time is never tracked
-**File:** `simulation/metrics.go:53`
-
-`CharacterStats.TotalSurvivalTurns` is initialized to 0 and never incremented. The
-survival time stats in the CSV output are always 0.
-
-**Fix:** Track the turn on which each player is eliminated during `processGameActions`.
+### ~~FEAT-13: Survival time is never tracked~~ FIXED
+TotalSurvivalTurns now tracks survival time for winner's characters (they survive the full game).
+Winner characters accumulate result.TotalTurns for each game they win.
