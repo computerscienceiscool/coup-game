@@ -246,7 +246,10 @@ func (p *EnhancedAIPlayer) targetRichestPlayer(actions []Action) Action {
 	maxCoins := -1
 
 	for _, action := range actions {
-		targetAction := action.(TargetedAction)
+		targetAction, ok := action.(TargetedAction)
+		if !ok {
+			continue
+		}
 		target := targetAction.GetTarget()
 
 		if target.GetCoins() > maxCoins {
@@ -269,7 +272,10 @@ func (p *EnhancedAIPlayer) targetStrongestPlayer(actions []Action, state GameSta
 	maxInfluence := -1
 
 	for _, action := range actions {
-		targetAction := action.(TargetedAction)
+		targetAction, ok := action.(TargetedAction)
+		if !ok {
+			continue
+		}
 		target := targetAction.GetTarget()
 		targetID := target.GetID()
 
@@ -297,14 +303,17 @@ func (p *EnhancedAIPlayer) targetBiggestThreat(actions []Action, state GameState
 	maxThreat := -1
 
 	for _, action := range actions {
-		targetAction := action.(TargetedAction)
+		targetAction, ok := action.(TargetedAction)
+		if !ok {
+			continue
+		}
 		target := targetAction.GetTarget()
 		targetID := target.GetID()
 
 		// Calculate threat score based on coins and influence
 		for _, playerState := range state.Players {
 			if playerState.ID == targetID {
-				threatScore := playerState.Coins + (playerState.Influences * 3)
+				threatScore := playerState.Coins + (playerState.Influences * ThreatInfluenceMultiplier)
 				if threatScore > maxThreat {
 					maxThreat = threatScore
 					bestAction = action

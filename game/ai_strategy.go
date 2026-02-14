@@ -76,28 +76,28 @@ func CreateDukeStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
 	// Set up strategy parameters based on competitive level
 	switch level {
 	case HighCompetitive:
-		strategy.BluffRate = 0.7
-		strategy.ChallengeRate = 0.7
+		strategy.BluffRate = DukeHighBluffRate
+		strategy.ChallengeRate = DukeHighChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Tax"] = 0.9
-		strategy.CharacterBluffRates[Duke] = 0.7
-		strategy.CharacterBlockRates[Duke] = 0.9
+		strategy.ActionPreferences["Tax"] = TaxHighPreference
+		strategy.CharacterBluffRates[Duke] = DukeHighBluffRate
+		strategy.CharacterBlockRates[Duke] = DukeHighBlockRate
 
 	case MediumCompetitive:
-		strategy.BluffRate = 0.4
-		strategy.ChallengeRate = 0.5
+		strategy.BluffRate = DukeMediumBluffRate
+		strategy.ChallengeRate = DukeMediumChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Tax"] = 0.6
-		strategy.CharacterBluffRates[Duke] = 0.4
-		strategy.CharacterBlockRates[Duke] = 0.6
+		strategy.ActionPreferences["Tax"] = TaxMediumPreference
+		strategy.CharacterBluffRates[Duke] = DukeMediumBluffRate
+		strategy.CharacterBlockRates[Duke] = DukeMediumBlockRate
 
 	case LowCompetitive:
-		strategy.BluffRate = 0.1
-		strategy.ChallengeRate = 0.3
+		strategy.BluffRate = DukeLowBluffRate
+		strategy.ChallengeRate = DukeLowChallengeRate
 		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Tax"] = 0.3
-		strategy.CharacterBluffRates[Duke] = 0.1
-		strategy.CharacterBlockRates[Duke] = 0.3
+		strategy.ActionPreferences["Tax"] = TaxLowPreference
+		strategy.CharacterBluffRates[Duke] = DukeLowBluffRate
+		strategy.CharacterBlockRates[Duke] = DukeLowBlockRate
 	}
 
 	return strategy
@@ -119,27 +119,27 @@ func CreateAssassinStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
 	// Set up strategy parameters based on competitive level
 	switch level {
 	case HighCompetitive:
-		strategy.BluffRate = 0.6
-		strategy.ChallengeRate = 0.6
+		strategy.BluffRate = AssassinHighBluffRate
+		strategy.ChallengeRate = AssassinHighChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Assassinate"] = 0.8
-		strategy.CharacterBluffRates[Assassin] = 0.6
+		strategy.ActionPreferences["Assassinate"] = AssassinateHighPreference
+		strategy.CharacterBluffRates[Assassin] = AssassinHighBluffRate
 		strategy.TargetSelection["Assassinate"] = ThreatTarget
 
 	case MediumCompetitive:
-		strategy.BluffRate = 0.35
-		strategy.ChallengeRate = 0.5
+		strategy.BluffRate = AssassinMediumBluffRate
+		strategy.ChallengeRate = AssassinMediumChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Assassinate"] = 0.5
-		strategy.CharacterBluffRates[Assassin] = 0.35
+		strategy.ActionPreferences["Assassinate"] = AssassinateMediumPreference
+		strategy.CharacterBluffRates[Assassin] = AssassinMediumBluffRate
 		strategy.TargetSelection["Assassinate"] = StrongestTarget
 
 	case LowCompetitive:
-		strategy.BluffRate = 0.15
-		strategy.ChallengeRate = 0.3
+		strategy.BluffRate = AssassinLowBluffRate
+		strategy.ChallengeRate = AssassinLowChallengeRate
 		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Assassinate"] = 0.3
-		strategy.CharacterBluffRates[Assassin] = 0.15
+		strategy.ActionPreferences["Assassinate"] = AssassinateLowPreference
+		strategy.CharacterBluffRates[Assassin] = AssassinLowBluffRate
 		strategy.TargetSelection["Assassinate"] = RandomTarget
 	}
 
@@ -162,30 +162,30 @@ func CreateCaptainStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
 	// Set up strategy parameters based on competitive level
 	switch level {
 	case HighCompetitive:
-		strategy.BluffRate = 0.65
-		strategy.ChallengeRate = 0.6
+		strategy.BluffRate = CaptainHighBluffRate
+		strategy.ChallengeRate = CaptainHighChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Steal"] = 0.8
-		strategy.CharacterBluffRates[Captain] = 0.65
-		strategy.CharacterBlockRates[Captain] = 0.9
+		strategy.ActionPreferences["Steal"] = StealHighPreference
+		strategy.CharacterBluffRates[Captain] = CaptainHighBluffRate
+		strategy.CharacterBlockRates[Captain] = CaptainHighBlockRate
 		strategy.TargetSelection["Steal"] = RichestTarget
 
 	case MediumCompetitive:
-		strategy.BluffRate = 0.4
-		strategy.ChallengeRate = 0.5
+		strategy.BluffRate = CaptainMediumBluffRate
+		strategy.ChallengeRate = CaptainMediumChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Steal"] = 0.5
-		strategy.CharacterBluffRates[Captain] = 0.4
-		strategy.CharacterBlockRates[Captain] = 0.6
+		strategy.ActionPreferences["Steal"] = StealMediumPreference
+		strategy.CharacterBluffRates[Captain] = CaptainMediumBluffRate
+		strategy.CharacterBlockRates[Captain] = CaptainMediumBlockRate
 		strategy.TargetSelection["Steal"] = RichestTarget
 
 	case LowCompetitive:
-		strategy.BluffRate = 0.1
-		strategy.ChallengeRate = 0.3
+		strategy.BluffRate = CaptainLowBluffRate
+		strategy.ChallengeRate = CaptainLowChallengeRate
 		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Steal"] = 0.2
-		strategy.CharacterBluffRates[Captain] = 0.1
-		strategy.CharacterBlockRates[Captain] = 0.3
+		strategy.ActionPreferences["Steal"] = StealLowPreference
+		strategy.CharacterBluffRates[Captain] = CaptainLowBluffRate
+		strategy.CharacterBlockRates[Captain] = CaptainLowBlockRate
 		strategy.TargetSelection["Steal"] = RandomTarget
 	}
 
@@ -208,28 +208,28 @@ func CreateAmbassadorStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
 	// Set up strategy parameters based on competitive level
 	switch level {
 	case HighCompetitive:
-		strategy.BluffRate = 0.5
-		strategy.ChallengeRate = 0.6
+		strategy.BluffRate = AmbassadorHighBluffRate
+		strategy.ChallengeRate = AmbassadorHighChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Exchange"] = 0.7
-		strategy.CharacterBluffRates[Ambassador] = 0.5
-		strategy.CharacterBlockRates[Ambassador] = 0.9
+		strategy.ActionPreferences["Exchange"] = ExchangeHighPreference
+		strategy.CharacterBluffRates[Ambassador] = AmbassadorHighBluffRate
+		strategy.CharacterBlockRates[Ambassador] = AmbassadorHighBlockRate
 
 	case MediumCompetitive:
-		strategy.BluffRate = 0.3
-		strategy.ChallengeRate = 0.5
+		strategy.BluffRate = AmbassadorMediumBluffRate
+		strategy.ChallengeRate = AmbassadorMediumChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Exchange"] = 0.5
-		strategy.CharacterBluffRates[Ambassador] = 0.3
-		strategy.CharacterBlockRates[Ambassador] = 0.6
+		strategy.ActionPreferences["Exchange"] = ExchangeMediumPreference
+		strategy.CharacterBluffRates[Ambassador] = AmbassadorMediumBluffRate
+		strategy.CharacterBlockRates[Ambassador] = AmbassadorMediumBlockRate
 
 	case LowCompetitive:
-		strategy.BluffRate = 0.05
-		strategy.ChallengeRate = 0.3
+		strategy.BluffRate = AmbassadorLowBluffRate
+		strategy.ChallengeRate = AmbassadorLowChallengeRate
 		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Exchange"] = 0.2
-		strategy.CharacterBluffRates[Ambassador] = 0.05
-		strategy.CharacterBlockRates[Ambassador] = 0.3
+		strategy.ActionPreferences["Exchange"] = ExchangeLowPreference
+		strategy.CharacterBluffRates[Ambassador] = AmbassadorLowBluffRate
+		strategy.CharacterBlockRates[Ambassador] = AmbassadorLowBlockRate
 	}
 
 	return strategy
@@ -251,28 +251,28 @@ func CreateContessaStrategy(level CompetitiveLevel) *EnhancedAIStrategy {
 	// Set up strategy parameters based on competitive level
 	switch level {
 	case HighCompetitive:
-		strategy.BluffRate = 0.8
-		strategy.ChallengeRate = 0.6
+		strategy.BluffRate = ContessaHighBluffRate
+		strategy.ChallengeRate = ContessaHighChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Income"] = 0.6
-		strategy.CharacterBluffRates[Contessa] = 0.8
-		strategy.CharacterBlockRates[Contessa] = 1.0
+		strategy.ActionPreferences["Income"] = IncomeHighPreference
+		strategy.CharacterBluffRates[Contessa] = ContessaHighBluffRate
+		strategy.CharacterBlockRates[Contessa] = ContessaHighBlockRate
 
 	case MediumCompetitive:
-		strategy.BluffRate = 0.5
-		strategy.ChallengeRate = 0.5
+		strategy.BluffRate = ContessaMediumBluffRate
+		strategy.ChallengeRate = ContessaMediumChallengeRate
 		strategy.AlwaysBlock = true
-		strategy.ActionPreferences["Income"] = 0.5
-		strategy.CharacterBluffRates[Contessa] = 0.5
-		strategy.CharacterBlockRates[Contessa] = 0.8
+		strategy.ActionPreferences["Income"] = IncomeMediumPreference
+		strategy.CharacterBluffRates[Contessa] = ContessaMediumBluffRate
+		strategy.CharacterBlockRates[Contessa] = ContessaMediumBlockRate
 
 	case LowCompetitive:
-		strategy.BluffRate = 0.15
-		strategy.ChallengeRate = 0.3
+		strategy.BluffRate = ContessaLowBluffRate
+		strategy.ChallengeRate = ContessaLowChallengeRate
 		strategy.AlwaysBlock = false
-		strategy.ActionPreferences["Income"] = 0.4
-		strategy.CharacterBluffRates[Contessa] = 0.15
-		strategy.CharacterBlockRates[Contessa] = 0.6
+		strategy.ActionPreferences["Income"] = IncomeLowPreference
+		strategy.CharacterBluffRates[Contessa] = ContessaLowBluffRate
+		strategy.CharacterBlockRates[Contessa] = ContessaLowBlockRate
 	}
 
 	return strategy
@@ -297,6 +297,6 @@ func CreateRandomStrategy(rng *rand.Rand, level CompetitiveLevel) *EnhancedAIStr
 		return CreateContessaStrategy(level)
 	default:
 		// Should never happen, but fallback
-		return NewBasicAIStrategy(0.3, 0.5, true)
+		return NewBasicAIStrategy(DefaultBluffRate, DefaultChallengeRate, true)
 	}
 }

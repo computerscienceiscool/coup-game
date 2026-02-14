@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"sort"
 	"time"
 
@@ -17,6 +18,7 @@ var (
 	games            = flag.Int("games", 1000000, "Total games to simulate")
 	workers          = flag.Int("workers", runtime.NumCPU(), "Parallel workers")
 	verbose          = flag.Bool("v", false, "Verbose output")
+	quiet            = flag.Bool("quiet", false, "Quiet mode - only show progress bar and final summary")
 	profile          = flag.String("profile", "", "Enable profiling (cpu|mem)")
 	seed             = flag.Int64("seed", 0, "Random seed (0 for random)")
 	output           = flag.String("output", "./results", "Output directory")
@@ -27,6 +29,49 @@ var (
 
 func main() {
 	flag.Parse()
+
+	// Handle profiling if requested
+	if *profile != "" {
+		switch *profile {
+		case "cpu":
+			f, err := os.Create("cpu.pprof")
+			if err != nil {
+				fmt.Printf("Error creating CPU profile: %v\n", err)
+				return
+			}
+			defer f.Close()
+			if err := pprof.StartCPUProfile(f); err != nil {
+				fmt.Printf("Error starting CPU profile: %v\n", err)
+				return
+			}
+			defer pprof.StopCPUProfile()
+			if !*quiet {
+				fmt.Println("CPU profiling enabled, writing to cpu.pprof")
+			}
+		case "mem":
+			defer func() {
+				f, err := os.Create("mem.pprof")
+				if err != nil {
+					fmt.Printf("Error creating memory profile: %v\n", err)
+					return
+				}
+				defer f.Close()
+				runtime.GC() // Get up-to-date statistics
+				if err := pprof.WriteHeapProfile(f); err != nil {
+					fmt.Printf("Error writing memory profile: %v\n", err)
+				}
+				if !*quiet {
+					fmt.Println("Memory profile written to mem.pprof")
+				}
+			}()
+			if !*quiet {
+				fmt.Println("Memory profiling enabled, will write to mem.pprof on exit")
+			}
+		default:
+			fmt.Printf("Unknown profile type: %s (use 'cpu' or 'mem')\n", *profile)
+			return
+		}
+	}
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(*output, 0755); err != nil {
@@ -40,7 +85,8 @@ func main() {
 	}
 
 	// Pass the verbose flag to the game package
-	game.Verbose = *verbose
+	// If quiet mode is enabled, disable verbose output
+	game.Verbose = *verbose && !*quiet
 
 	// If test-comp flag is set, run competitiveness test and exit
 	if *testComp > 0 {
@@ -48,9 +94,11 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Starting Coup simulation with %d games using %d workers\n", *games, *workers)
-	fmt.Printf("Random seed: %d\n", *seed)
-	fmt.Printf("AI mode: %s\n", *aiMode)
+	if !*quiet {
+		fmt.Printf("Starting Coup simulation with %d games using %d workers\n", *games, *workers)
+		fmt.Printf("Random seed: %d\n", *seed)
+		fmt.Printf("AI mode: %s\n", *aiMode)
+	}
 
 	// Evenly distribute games across player counts (2-6 players)
 	gamesPerCount := *games / 5
@@ -67,19 +115,31 @@ func main() {
 	switch *aiMode {
 	case "high":
 		competitiveLevel = game.HighCompetitive
-		fmt.Println("Using High Competitive AI players")
+		if !*quiet {
+			fmt.Println("Using High Competitive AI players")
+		}
 	case "medium":
 		competitiveLevel = game.MediumCompetitive
-		fmt.Println("Using Medium Competitive AI players")
+		if !*quiet {
+			fmt.Println("Using Medium Competitive AI players")
+		}
 	case "low":
 		competitiveLevel = game.LowCompetitive
-		fmt.Println("Using Low Competitive AI players")
+		if !*quiet {
+			fmt.Println("Using Low Competitive AI players")
+		}
 	case "original":
-		fmt.Println("Using Original AI behavior (30% bluff, 50% challenge)")
+		if !*quiet {
+			fmt.Println("Using Original AI behavior (30% bluff, 50% challenge)")
+		}
 	case "mixed":
-		fmt.Println("Using Mixed AI players with varied competitive levels")
+		if !*quiet {
+			fmt.Println("Using Mixed AI players with varied competitive levels")
+		}
 	default:
-		fmt.Println("Unknown AI mode, defaulting to mixed")
+		if !*quiet {
+			fmt.Println("Unknown AI mode, defaulting to mixed")
+		}
 		*aiMode = "mixed"
 	}
 
@@ -97,30 +157,40 @@ func main() {
 	}
 
 	// Run a single test game first to verify rules
-	fmt.Println("Running test game...")
-	if err := runTestGame(*seed, *aiMode, competitiveLevel); err != nil {
+	if !*quiet {
+		fmt.Println("Running test game...")
+	}
+	if err := runTestGame(*seed, *aiMode, competitiveLevel, *quiet); err != nil {
 		fmt.Printf("Error during test game: %v\n", err)
 		return
 	}
 
 	// Initialize the enhanced simulator
-	fmt.Println("Initializing simulation...")
+	if !*quiet {
+		fmt.Println("Initializing simulation...")
+	}
 	simulator := simulation.NewEnhancedSimulator(config)
 
 	// Run the simulation
-	fmt.Println("Starting simulation...")
+	if !*quiet {
+		fmt.Println("Starting simulation...")
+	}
 	startTime := time.Now()
 	results := simulator.Run()
 	duration := time.Since(startTime)
 
 	// Analyze results
-	fmt.Println("\nAnalyzing results...")
+	if !*quiet {
+		fmt.Println("\nAnalyzing results...")
+	}
 	analyzer := analysis.NewAnalyzer(results)
 	stats := analyzer.AnalyzeResults()
 
 	// Generate reports
-	fmt.Println("Generating reports...")
-	if err := analysis.GenerateCSVs(stats, *output); err != nil {
+	if !*quiet {
+		fmt.Println("Generating reports...")
+	}
+	if err := analysis.GenerateCSVs(stats, &results, *output); err != nil {
 		fmt.Printf("Error generating CSV reports: %v\n", err)
 	}
 
@@ -139,7 +209,7 @@ func main() {
 }
 
 // runTestGame runs a single game to verify rules are working correctly
-func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel) error {
+func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel, quiet bool) error {
 	var g *game.Game
 	var err error
 
@@ -159,20 +229,68 @@ func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel) error {
 	}
 
 	// Display AI strategy details
-	fmt.Println("\nTest Game Details:")
-	fmt.Printf("Game Mode: %s, Player Count: %d\n", aiMode, len(g.Players))
+	if !quiet {
+		fmt.Println("\nTest Game Details:")
+		fmt.Printf("Game Mode: %s, Player Count: %d\n", aiMode, len(g.Players))
 
-	fmt.Println("\nPlayers and Strategies:")
-	for i, p := range g.Players {
-		// Show player's initial cards
-		cards := make([]string, 0)
-		for _, card := range p.GetInfluences() {
-			cards = append(cards, card.Name)
+		fmt.Println("\nPlayers and Strategies:")
+		for i, p := range g.Players {
+			// Show player's initial cards
+			cards := make([]string, 0)
+			for _, card := range p.GetInfluences() {
+				cards = append(cards, card.Name)
+			}
+
+			// Detect player type and show strategy details
+			if ep, ok := p.(*game.EnhancedAIPlayer); ok {
+				// Enhanced AI - show competitive level
+				levelName := "Unknown"
+				switch ep.Strategy.Level {
+				case game.LowCompetitive:
+					levelName = "Low"
+				case game.MediumCompetitive:
+					levelName = "Medium"
+				case game.HighCompetitive:
+					levelName = "High"
+				}
+
+				// Get character preference
+				charPref := "Random"
+				if len(ep.Strategy.CharacterPreferences) > 0 {
+					charPref = ep.Strategy.CharacterPreferences[0].Character
+				}
+
+				fmt.Printf("  Player %d: %s Competitive AI\n", i+1, levelName)
+				fmt.Printf("    Preference: %s character\n", charPref)
+				fmt.Printf("    Bluff Rate: %.0f%%\n", ep.Strategy.BluffRate*100)
+				fmt.Printf("    Challenge Rate: %.0f%%\n", ep.Strategy.ChallengeRate*100)
+				fmt.Printf("    Starting Cards: %v\n", cards)
+
+			} else if _, ok := p.(*game.AIPlayer); ok {
+				// Original AI
+				fmt.Printf("  Player %d: Original AI\n", i+1)
+				fmt.Printf("    Bluff Rate: 30%%\n")
+				fmt.Printf("    Challenge Rate: 50%%\n")
+				fmt.Printf("    Starting Cards: %v\n", cards)
+			} else {
+				// Unknown player type
+				fmt.Printf("  Player %d: Unknown AI Type\n", i+1)
+				fmt.Printf("    Starting Cards: %v\n", cards)
+			}
 		}
+		fmt.Println()
+	}
 
-		// Detect player type and show strategy details
-		if ep, ok := p.(*game.EnhancedAIPlayer); ok {
-			// Enhanced AI - show competitive level
+	// Run the game
+	winner := g.RunToCompletion()
+
+	// Print some details to verify
+	if !quiet {
+		fmt.Printf("Test game completed in %d turns\n", g.Turn)
+		fmt.Printf("Winner: Player %d with %d coins\n", winner.GetID()+1, winner.GetCoins())
+
+		// Show winner's strategy details
+		if ep, ok := winner.(*game.EnhancedAIPlayer); ok {
 			levelName := "Unknown"
 			switch ep.Strategy.Level {
 			case game.LowCompetitive:
@@ -183,69 +301,25 @@ func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel) error {
 				levelName = "High"
 			}
 
-			// Get character preference
+			// Get preferred character
 			charPref := "Random"
 			if len(ep.Strategy.CharacterPreferences) > 0 {
 				charPref = ep.Strategy.CharacterPreferences[0].Character
 			}
 
-			fmt.Printf("  Player %d: %s Competitive AI\n", i+1, levelName)
-			fmt.Printf("    Preference: %s character\n", charPref)
-			fmt.Printf("    Bluff Rate: %.0f%%\n", ep.Strategy.BluffRate*100)
-			fmt.Printf("    Challenge Rate: %.0f%%\n", ep.Strategy.ChallengeRate*100)
-			fmt.Printf("    Starting Cards: %v\n", cards)
-
-		} else if _, ok := p.(*game.AIPlayer); ok {
-			// Original AI
-			fmt.Printf("  Player %d: Original AI\n", i+1)
-			fmt.Printf("    Bluff Rate: 30%%\n")
-			fmt.Printf("    Challenge Rate: 50%%\n")
-			fmt.Printf("    Starting Cards: %v\n", cards)
-		} else {
-			// Unknown player type
-			fmt.Printf("  Player %d: Unknown AI Type\n", i+1)
-			fmt.Printf("    Starting Cards: %v\n", cards)
-		}
-	}
-	fmt.Println()
-
-	// Run the game
-	winner := g.RunToCompletion()
-
-	// Print some details to verify
-	fmt.Printf("Test game completed in %d turns\n", g.Turn)
-	fmt.Printf("Winner: Player %d with %d coins\n", winner.GetID()+1, winner.GetCoins())
-
-	// Show winner's strategy details
-	if ep, ok := winner.(*game.EnhancedAIPlayer); ok {
-		levelName := "Unknown"
-		switch ep.Strategy.Level {
-		case game.LowCompetitive:
-			levelName = "Low"
-		case game.MediumCompetitive:
-			levelName = "Medium"
-		case game.HighCompetitive:
-			levelName = "High"
+			fmt.Printf("Winner strategy: %s Competitive with %s preference\n",
+				levelName, charPref)
+		} else if _, ok := winner.(*game.AIPlayer); ok {
+			fmt.Printf("Winner strategy: Original AI\n")
 		}
 
-		// Get preferred character
-		charPref := "Random"
-		if len(ep.Strategy.CharacterPreferences) > 0 {
-			charPref = ep.Strategy.CharacterPreferences[0].Character
+		// Display winner's cards
+		winnerCards := make([]string, 0)
+		for _, card := range winner.GetInfluences() {
+			winnerCards = append(winnerCards, card.Name)
 		}
-
-		fmt.Printf("Winner strategy: %s Competitive with %s preference\n",
-			levelName, charPref)
-	} else if _, ok := winner.(*game.AIPlayer); ok {
-		fmt.Printf("Winner strategy: Original AI\n")
+		fmt.Printf("Winner's cards: %v\n", winnerCards)
 	}
-
-	// Display winner's cards
-	winnerCards := make([]string, 0)
-	for _, card := range winner.GetInfluences() {
-		winnerCards = append(winnerCards, card.Name)
-	}
-	fmt.Printf("Winner's cards: %v\n", winnerCards)
 
 	// Check some basic rules were followed
 	for _, action := range g.ActionLog {
@@ -255,7 +329,9 @@ func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel) error {
 		}
 	}
 
-	fmt.Println("Test game rules verified successfully")
+	if !quiet {
+		fmt.Println("Test game rules verified successfully")
+	}
 	return nil
 }
 
