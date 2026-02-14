@@ -98,9 +98,12 @@ func main() {
 	}
 
 	if !*quiet {
-		fmt.Printf("Starting Coup simulation with %d games using %d workers\n", *games, *workers)
-		fmt.Printf("Random seed: %d\n", *seed)
-		fmt.Printf("AI mode: %s\n", *aiMode)
+		printHeader()
+		fmt.Printf("  🎮 Games:       %s\n", formatNumber(*games))
+		fmt.Printf("  ⚙️  Workers:     %d\n", *workers)
+		fmt.Printf("  🎲 Seed:        %d\n", *seed)
+		fmt.Printf("  🤖 AI Mode:     %s\n", colorAIMode(*aiMode))
+		fmt.Println()
 	}
 
 	// Evenly distribute games across player counts (2-6 players)
@@ -198,20 +201,22 @@ func main() {
 	}
 
 	// Print summary
-	fmt.Println("\nSimulation Complete!")
-	fmt.Printf("Processed %d games in %s\n", len(results.Results), duration)
+	printResultsHeader()
+	gamesPerSec := float64(len(results.Results)) / duration.Seconds()
+
+	fmt.Printf("  ✅ Games Completed:  %s\n", colorGreen(formatNumber(len(results.Results))))
 	if results.ErrorCount > 0 {
-		fmt.Printf("Warning: %d games failed to create and were skipped\n", results.ErrorCount)
+		fmt.Printf("  ⚠️  Errors:           %s\n", colorYellow(fmt.Sprintf("%d", results.ErrorCount)))
 	}
-	fmt.Printf("Games per second: %.2f\n", float64(len(results.Results))/duration.Seconds())
+	fmt.Printf("  ⏱️  Duration:         %s\n", colorCyan(duration.Round(time.Millisecond).String()))
+	fmt.Printf("  🚀 Performance:      %s games/sec\n", colorGreen(fmt.Sprintf("%.2f", gamesPerSec)))
+	fmt.Println()
 
-	// Print character rankings
-	fmt.Println("\nCharacter Power Rankings:")
-	for i, char := range stats.RankedCharacters {
-		fmt.Printf("%d. %s - Win Rate: %.2f%%\n", i+1, char.Name, char.WinRate*100)
-	}
+	// Print character rankings with visual bars
+	printCharacterRankings(stats.RankedCharacters)
 
-	fmt.Printf("\nDetailed reports saved to %s\n", *output)
+	fmt.Printf("\n  📊 Detailed reports: %s\n", colorCyan(*output))
+	printFooter()
 }
 
 // runTestGame runs a single game to verify rules are working correctly
@@ -640,4 +645,142 @@ func runReplayGame(seed int64, aiMode string) {
 	}
 	fmt.Printf("Winner's remaining cards: %v\n", winnerCards)
 	fmt.Printf("Winner's coins: %d\n", winner.GetCoins())
+}
+
+// ANSI color codes
+const (
+	resetCode  = "\033[0m"
+	redCode    = "\033[31m"
+	greenCode  = "\033[32m"
+	yellowCode = "\033[33m"
+	blueCode   = "\033[34m"
+	purpleCode = "\033[35m"
+	cyanCode   = "\033[36m"
+	whiteCode  = "\033[37m"
+	boldCode   = "\033[1m"
+)
+
+// Color helper functions
+func colorGreen(s string) string  { return greenCode + s + resetCode }
+func colorYellow(s string) string { return yellowCode + s + resetCode }
+func colorCyan(s string) string   { return cyanCode + s + resetCode }
+func colorBlue(s string) string   { return blueCode + s + resetCode }
+func colorPurple(s string) string { return purpleCode + s + resetCode }
+func colorBold(s string) string   { return boldCode + s + resetCode }
+
+func colorAIMode(mode string) string {
+	switch mode {
+	case "high":
+		return redCode + "High Competitive" + resetCode
+	case "medium":
+		return yellowCode + "Medium Competitive" + resetCode
+	case "low":
+		return greenCode + "Low Competitive" + resetCode
+	case "mixed":
+		return purpleCode + "Mixed Levels" + resetCode
+	case "original":
+		return cyanCode + "Original AI" + resetCode
+	default:
+		return mode
+	}
+}
+
+// Format number with commas
+func formatNumber(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if n < 1000 {
+		return s
+	}
+
+	var result string
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result += ","
+		}
+		result += string(c)
+	}
+	return result
+}
+
+// Print fancy header
+func printHeader() {
+	fmt.Println()
+	fmt.Println(boldCode + "╔═══════════════════════════════════════════════════════╗" + resetCode)
+	fmt.Println(boldCode + "║" + resetCode + "           🎴  COUP GAME SIMULATOR  🎴                " + boldCode + "║" + resetCode)
+	fmt.Println(boldCode + "╚═══════════════════════════════════════════════════════╝" + resetCode)
+	fmt.Println()
+}
+
+// Print results header
+func printResultsHeader() {
+	fmt.Println()
+	fmt.Println(boldCode + "╔═══════════════════════════════════════════════════════╗" + resetCode)
+	fmt.Println(boldCode + "║" + resetCode + "                  📈 RESULTS 📈                        " + boldCode + "║" + resetCode)
+	fmt.Println(boldCode + "╚═══════════════════════════════════════════════════════╝" + resetCode)
+	fmt.Println()
+}
+
+// Print character rankings with bars
+func printCharacterRankings(rankings []analysis.CharacterRanking) {
+	fmt.Println(boldCode + "  👑 CHARACTER POWER RANKINGS" + resetCode)
+	fmt.Println(boldCode + "  ═══════════════════════════════════════════════════" + resetCode)
+	fmt.Println()
+
+	maxWinRate := 0.0
+	for _, char := range rankings {
+		if char.WinRate > maxWinRate {
+			maxWinRate = char.WinRate
+		}
+	}
+
+	medals := []string{"🥇", "🥈", "🥉", "4️⃣ ", "5️⃣ "}
+
+	for i, char := range rankings {
+		// Create visual bar
+		barLength := int(char.WinRate * 50 / maxWinRate)
+		bar := ""
+
+		// Color code based on ranking
+		var barColor string
+		switch i {
+		case 0:
+			barColor = yellowCode // Gold
+		case 1:
+			barColor = whiteCode // Silver
+		case 2:
+			barColor = yellowCode // Bronze
+		case 3:
+			barColor = blueCode
+		case 4:
+			barColor = purpleCode
+		default:
+			barColor = cyanCode
+		}
+
+		for j := 0; j < barLength; j++ {
+			bar += "█"
+		}
+
+		medal := medals[i]
+		if i >= len(medals) {
+			medal = "   "
+		}
+
+		fmt.Printf("  %s %-12s %s%-20s%s %.2f%%\n",
+			medal,
+			boldCode+char.Name+resetCode,
+			barColor,
+			bar,
+			resetCode,
+			char.WinRate*100)
+	}
+}
+
+// Print footer
+func printFooter() {
+	fmt.Println()
+	fmt.Println(boldCode + "╔═══════════════════════════════════════════════════════╗" + resetCode)
+	fmt.Println(boldCode + "║" + resetCode + "            ✨ Simulation Complete! ✨                " + boldCode + "║" + resetCode)
+	fmt.Println(boldCode + "╚═══════════════════════════════════════════════════════╝" + resetCode)
+	fmt.Println()
 }
