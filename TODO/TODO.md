@@ -156,20 +156,13 @@ Winner characters accumulate result.TotalTurns for each game they win.
 
 ## Design Evaluation & Architectural Suggestions
 
-### DESIGN-1: Merge Simulator and EnhancedSimulator (code duplication)
-**Files:** `simulation/simulation.go`, `simulation/enhanced_simulator.go`
+### ~~DESIGN-1: Merge Simulator and EnhancedSimulator (code duplication)~~ FIXED
+**Files:** `simulation/simulation.go`, ~~`simulation/enhanced_simulator.go`~~ (deleted)
 
-`Simulator` and `EnhancedSimulator` share ~90% identical code (`Run`, `worker`,
-`collectResults`, `submitGames`, `determinePlayerCount`, `updateProgress`). They differ
-only in how the game is created inside `worker()`. The basic `Simulator` is never called
-from `main.go`.
-
-**Fix:** Delete `Simulator`. Extract game creation into a `GameFactory` interface:
-```go
-type GameFactory func(playerCount int, seed int64) (*game.Game, error)
-```
-Pass it to a single `Simulator` via config. `EnhancedSimulator.worker` already has a
-switch on `AIMode` — that switch becomes the factory.
+Added AIMode, CompetitiveLevel, CharacterBalance fields to Config. Updated Simulator.worker()
+to handle all AI modes (original, mixed, level-based). Added generateBalancedAITypes() method
+to Simulator. Deleted enhanced_simulator.go (merged into simulation.go). Reduced code
+duplication and simplified the codebase.
 
 ---
 
@@ -196,46 +189,37 @@ This drops memory from O(games * actions) to O(1).
 
 ---
 
-### DESIGN-3: Action log export is arbitrarily capped at 10k rows
-**File:** `analysis/export.go:162-168`
+### ~~DESIGN-3: Action log export is arbitrarily capped at 10k rows~~ FIXED
+**File:** `analysis/export.go`
 
-`generateActionLogs` hard-caps output at `maxActions = 10000`. With 1M games averaging
-~15 actions each, this captures <0.1% of data with no warning to the user.
-
-**Fix:** Either:
-- Remove the cap and write all actions (stream to disk, don't hold in memory)
-- Make it configurable via a flag (`--max-action-logs`)
-- Sample uniformly instead of taking only the first N
+Removed the arbitrary `maxActions = 10000` cap. generateActionLogs() now writes all action
+logs to CSV without limit, allowing full data export for large simulations.
 
 ---
 
-### DESIGN-4: `game.Verbose` is global mutable state
-**File:** `game/game_creation.go` (uses `game.Verbose`), `main.go:90`
+### ~~DESIGN-4: `game.Verbose` is global mutable state~~ FIXED
+**File:** `game/game_creation.go`, `main.go`
 
-`game.Verbose` is a package-level `var` set from `main()`. This is not goroutine-safe
-(concurrent workers could read it while main writes it) and makes testing harder.
-
-**Fix:** Pass verbosity through the `Game` struct or the creation function parameters
-instead of relying on a global.
+Removed the global `var Verbose` from game/game_creation.go. Removed all Verbose print
+guards (debug output already handled by main.go's runTestGame). Removed unused helper
+functions (getLevelName, getCharacterName, getCharacterPreferenceName). Eliminated
+goroutine-unsafe global mutable state.
 
 ---
 
-### DESIGN-5: Challenge/block ordering bias (player ID 0 always goes first)
-**File:** `game/game.go:204-227` (challenge loop), `game/game.go:233-286` (block loop)
+### ~~DESIGN-5: Challenge/block ordering bias (player ID 0 always goes first)~~ FIXED
+**File:** `game/game.go` (challenge and block loops)
 
-Both loops iterate `g.Players` in index order starting from 0. This means Player 0
-always gets the first opportunity to challenge or block. In real Coup, any player can
-react and the order shouldn't systematically favor lower IDs across millions of games.
-
-**Fix:** Start iteration from a random offset or from the player to the left of the
-acting player (clockwise), which matches tabletop convention:
+Implemented clockwise iteration starting from the acting player using offset pattern:
 ```go
-for offset := 1; offset < len(g.Players); offset++ {
-    i := (g.CurrentPlayer + offset) % len(g.Players)
+for offset := 1; offset < numPlayers; offset++ {
+    i := (g.CurrentPlayer + offset) % numPlayers
     opponent := g.Players[i]
     // ...
 }
 ```
+Both challenge and block loops now iterate clockwise from the acting player, matching
+tabletop convention and eliminating systematic bias toward lower player IDs.
 
 ---
 
@@ -251,64 +235,40 @@ one to the other in `analyzeCharacters()` and `convertRankings()`.
 
 ---
 
-### DESIGN-7: Error handling in simulation workers swallows errors
-**File:** `simulation/enhanced_simulator.go:132-134`
+### ~~DESIGN-7: Error handling in simulation workers swallows errors~~ FIXED
+**File:** `simulation/simulation.go`
 
-When game creation fails, the error is printed to stdout and the game is silently
-skipped. The final results count will be less than `TotalGames` with no indication.
-
-**Fix:** Track errors in the result channel or a separate error channel:
-```go
-type GameOutcome struct {
-    Result GameResult
-    Err    error
-}
-```
-Report error count and affected game IDs at simulation end.
+Added ErrorCount field to Simulator (int64, atomically incremented on failures).
+Worker now uses `atomic.AddInt64(&s.ErrorCount, 1)` when game creation fails.
+SimulationResults.ErrorCount is set from atomic load. main.go reports error count
+if non-zero. Errors are now tracked and reported to the user.
 
 ---
 
-### DESIGN-8: CSV output has non-deterministic row order
-**File:** `analysis/export.go:228-243`
+### ~~DESIGN-8: CSV output has non-deterministic row order~~ FIXED
+**File:** `analysis/export.go`
 
-`generatePlayerCountAnalysis` iterates `stats.PlayerCountStats` (a map) and nested
-`CharacterWinRates` (also a map). Map iteration order in Go is randomized, so the CSV
-rows appear in different order each run, making diffs impossible.
-
-**Fix:** Sort player counts and character names before writing:
-```go
-counts := sortedKeys(stats.PlayerCountStats)
-for _, count := range counts { ... }
-```
+Added sort.Ints() for player counts and sort.Strings() for character names before
+iterating maps. generatePlayerCountAnalysis() now produces deterministic CSV output,
+making diffs and version control meaningful.
 
 ---
 
-### DESIGN-9: `NewGame()` still uses hardcoded rates instead of constants
-**File:** `game/game.go:63-66`
+### ~~DESIGN-9: `NewGame()` still uses hardcoded rates instead of constants~~ FIXED
+**File:** `game/game.go`
 
-Despite FEAT-9 extracting magic numbers into `constants.go`, `NewGame()` still creates
-AI players with literal `0.3` and `0.5`:
-```go
-players[i] = NewAIPlayer(i, &AIStrategy{
-    BluffRate:     0.3,
-    ChallengeRate: 0.5,
-```
-
-**Fix:** Use `DefaultBluffRate` and `DefaultChallengeRate` from `constants.go`.
+Updated NewGame() to use DefaultBluffRate and DefaultChallengeRate constants from
+constants.go instead of hardcoded 0.3 and 0.5 values. All magic numbers now eliminated.
 
 ---
 
-### DESIGN-10: `calculateSignificance()` returns fake p-values
-**File:** `analysis/analyzer.go:177-204`
+### ~~DESIGN-10: `calculateSignificance()` returns fake p-values~~ FIXED
+**File:** `analysis/analyzer.go`
 
-The function returns hardcoded values (0.01, 0.05, 0.10) based on heuristic thresholds
-rather than performing any actual hypothesis test. The returned value is labeled
-`SignificanceLevel` which implies statistical rigor that doesn't exist.
-
-**Fix:** Implement a chi-squared goodness-of-fit test comparing observed character win
-rates against a uniform distribution (null hypothesis: all characters win equally). Go
-has no stdlib chi-squared, but the test is ~20 lines of math. Alternatively, rename the
-field to `ConfidenceHeuristic` to avoid misrepresentation.
+Implemented proper chi-squared goodness-of-fit test with Wilson-Hilferty approximation
+for p-value calculation. Tests null hypothesis that all characters win at equal rates.
+Returns actual p-value (0-1) instead of hardcoded thresholds. Provides real statistical
+rigor for significance testing.
 
 ---
 
@@ -339,19 +299,10 @@ This also enables swapping strategies at runtime or testing rules with mock stra
 
 ---
 
-### DESIGN-12: Survival time only tracks winners, not losers
-**File:** `simulation/metrics.go:103-107`
+### ~~DESIGN-12: Survival time only tracks winners, not losers~~ FIXED
+**Files:** `game/game.go`, `simulation/simulation.go`, `simulation/metrics.go`
 
-FEAT-13 was marked fixed but only tracks winner survival (full game length).
-Characters that are eliminated early get 0 survival turns, which makes the metric
-meaningless for comparing fragile vs. durable characters.
-
-**Fix:** Add elimination tracking to the game. When a player loses their last influence,
-record `(playerID, turn)` in the `Game` struct. Pass this as a new field in `GameResult`:
-```go
-type GameResult struct {
-    // ...
-    EliminationTurns map[int]int  // playerID -> turn eliminated
-}
-```
-Then compute survival per character from starting cards + elimination turn.
+Added EliminationTurns map[int]int to Game struct to track when each player is eliminated.
+CheckWinCondition() records elimination turn for dead players. GameResult includes
+EliminationTurns field. Metrics now compute accurate per-character survival from starting
+cards + elimination turn data. All three game creation functions initialize the map.
