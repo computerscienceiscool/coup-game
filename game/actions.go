@@ -343,13 +343,11 @@ func (a *AssassinateAction) Name() string {
 
 // Execute performs the assassinate action
 func (a *AssassinateAction) Execute(g *Game) error {
-	if err := a.IsLegal(g, a.Actor); err != nil {
-		return err
-	}
+	// Note: 3-coin cost is paid upfront in ResolveAction (per Coup rules,
+	// the cost is paid even if the action is blocked or challenged)
 
-	// Pay 3 coins
-	if err := a.Actor.RemoveCoins(3); err != nil {
-		return err
+	if !a.Target.IsAlive() {
+		return errors.New("target is not alive")
 	}
 
 	// Target loses an influence

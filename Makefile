@@ -20,12 +20,6 @@ ENHANCED_SOURCES := ai_strategy.go enhanced_player.go game_creation.go enhanced_
 # Build the game with enhanced AI support
 build:
 	@echo "Building Coup simulation with multi-level AI..."
-	@echo "Copying enhanced AI files..."
-	cp /home/claude/ai_strategy.go game/
-	cp /home/claude/enhanced_player.go game/
-	cp /home/claude/game_creation.go game/
-	cp /home/claude/enhanced_simulator.go simulation/
-	cp /home/claude/main_updated.go main.go
 	go build -o $(EXECUTABLE)
 
 # Run a quick test with the specified AI mode
@@ -70,8 +64,8 @@ run-all: build
 # Run the full demo
 demo: build
 	@echo "Running demo script..."
-	chmod +x /home/claude/demo.sh
-	/home/claude/demo.sh
+	chmod +x ./demo.sh
+	./demo.sh
 
 # Clean up build artifacts and results
 clean:

@@ -8,14 +8,15 @@ import (
 
 // Game represents the state of a Coup game
 type Game struct {
-	Players       []Player
-	Deck          *Deck
-	CurrentPlayer int
-	Turn          int
-	Finished      bool
-	Winner        Player
-	ActionLog     []ActionLog
-	RNG           *rand.Rand // Random number generator for reproducibility
+	Players          []Player
+	Deck             *Deck
+	CurrentPlayer    int
+	Turn             int
+	Finished         bool
+	Winner           Player
+	ActionLog        []ActionLog
+	EliminationTurns map[int]int    // playerID -> turn eliminated
+	RNG              *rand.Rand     // Random number generator for reproducibility
 }
 
 // ActionLog records details of each action taken
@@ -61,20 +62,21 @@ func NewGame(playerCount int, seed int64) (*Game, error) {
 	// Create AI players
 	for i := 0; i < playerCount; i++ {
 		players[i] = NewAIPlayer(i, &AIStrategy{
-			BluffRate:     0.3, // 30% chance to bluff
-			ChallengeRate: 0.5, // 50% chance to challenge
+			BluffRate:     DefaultBluffRate,
+			ChallengeRate: DefaultChallengeRate,
 			AlwaysBlock:   true,
 		}, seed+int64(i))
 	}
 
 	game := &Game{
-		Players:       players,
-		Deck:          deck,
-		CurrentPlayer: 0,
-		Turn:          0,
-		Finished:      false,
-		ActionLog:     make([]ActionLog, 0),
-		RNG:           rng,
+		Players:          players,
+		Deck:             deck,
+		CurrentPlayer:    0,
+		Turn:             0,
+		Finished:         false,
+		ActionLog:        make([]ActionLog, 0),
+		EliminationTurns: make(map[int]int),
+		RNG:              rng,
 	}
 
 	// Deal initial cards and coins
@@ -200,8 +202,11 @@ func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool 
 
 	// Check if action can be challenged
 	if action.CanBeChallenged() {
-		// Allow other players to challenge
-		for i, opponent := range g.Players {
+		// Allow other players to challenge, starting clockwise from acting player
+		numPlayers := len(g.Players)
+		for offset := 1; offset < numPlayers; offset++ {
+			i := (g.CurrentPlayer + offset) % numPlayers
+			opponent := g.Players[i]
 			if i == player.GetID() || !opponent.IsAlive() {
 				continue // Skip self and eliminated players
 			}
@@ -229,8 +234,11 @@ func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool 
 
 	// Check if action can be blocked
 	if action.CanBeBlocked() {
-		// Allow other players to block
-		for i, opponent := range g.Players {
+		// Allow other players to block, starting clockwise from acting player
+		numPlayers := len(g.Players)
+		for offset := 1; offset < numPlayers; offset++ {
+			i := (g.CurrentPlayer + offset) % numPlayers
+			opponent := g.Players[i]
 			if i == player.GetID() || !opponent.IsAlive() {
 				continue // Skip self and eliminated players
 			}
@@ -246,9 +254,11 @@ func (g *Game) ResolveAction(player Player, action Action, log *ActionLog) bool 
 				blockingCharacter := opponent.ChooseBlockingCharacter(action)
 				log.BlockingCharacter = blockingCharacter.Name
 
-				// Block can be challenged
+				// Block can be challenged, starting clockwise from blocker
 				blockChallenged := false
-				for j, challenger := range g.Players {
+				for bOffset := 1; bOffset < numPlayers; bOffset++ {
+					j := (i + bOffset) % numPlayers
+					challenger := g.Players[j]
 					if j == opponent.GetID() || !challenger.IsAlive() {
 						continue // Skip blocker and eliminated players
 					}
@@ -458,7 +468,7 @@ func (g *Game) NextPlayer() {
 
 // CheckWinCondition checks if the game is over
 func (g *Game) CheckWinCondition() {
-	// Count living players
+	// Count living players and track eliminations
 	livingPlayers := 0
 	var lastLiving Player
 
@@ -466,6 +476,11 @@ func (g *Game) CheckWinCondition() {
 		if player.IsAlive() {
 			livingPlayers++
 			lastLiving = player
+		} else {
+			// Record elimination turn if not already recorded
+			if _, recorded := g.EliminationTurns[player.GetID()]; !recorded {
+				g.EliminationTurns[player.GetID()] = g.Turn
+			}
 		}
 	}
 

@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"math"
-	"sort"
 
 	"github.com/computerscienceiscool/coup-game/simulation"
 )
@@ -173,35 +172,64 @@ func (a *Analyzer) analyzePlayerCounts() {
 	}
 }
 
-// calculateSignificance determines if character differences are statistically significant
+// calculateSignificance performs a chi-squared goodness-of-fit test to determine
+// if character win rate differences are statistically significant.
+// Null hypothesis: all characters win at equal rates.
+// Returns an approximate p-value.
 func (a *Analyzer) calculateSignificance() float64 {
-	// For a simple approach, we'll check if there's enough data for statistical significance
-	// In a real implementation, we would use hypothesis testing (chi-squared, t-test, etc.)
-
-	totalGames := len(a.Results.Results)
+	// Collect observed wins per character
 	characters := len(a.Metrics.CharacterStats)
-
-	// We want at least 100 games per character for good confidence
-	if totalGames < characters*100 {
-		return 0.05 // Lower confidence if not enough games
+	if characters == 0 {
+		return 1.0
 	}
 
-	// Check if win rates have enough spread
-	winRates := make([]float64, 0, len(a.CharacterMap))
-	for _, stats := range a.CharacterMap {
-		winRates = append(winRates, stats.WinRate)
+	totalWins := 0
+	observedWins := make([]int, 0, characters)
+	for _, stats := range a.Metrics.CharacterStats {
+		observedWins = append(observedWins, stats.GamesWon)
+		totalWins += stats.GamesWon
 	}
 
-	sort.Float64s(winRates)
-	spread := winRates[len(winRates)-1] - winRates[0]
-
-	if spread < 0.05 {
-		return 0.10 // Less confidence if win rates are very close
-	} else if spread < 0.15 {
-		return 0.05 // Moderate confidence
-	} else {
-		return 0.01 // High confidence with large differences
+	if totalWins == 0 {
+		return 1.0
 	}
+
+	// Expected wins under null hypothesis (equal distribution)
+	expectedWins := float64(totalWins) / float64(characters)
+
+	// Calculate chi-squared statistic: sum((observed - expected)^2 / expected)
+	chiSquared := 0.0
+	for _, observed := range observedWins {
+		diff := float64(observed) - expectedWins
+		chiSquared += (diff * diff) / expectedWins
+	}
+
+	// Degrees of freedom = characters - 1
+	df := float64(characters - 1)
+
+	// Approximate p-value using the Wilson-Hilferty approximation
+	// for the chi-squared CDF
+	if df <= 0 {
+		return 1.0
+	}
+
+	// Normalize chi-squared to approximate standard normal
+	z := math.Pow(chiSquared/df, 1.0/3.0) - (1.0 - 2.0/(9.0*df))
+	z = z / math.Sqrt(2.0/(9.0*df))
+
+	// Approximate p-value from standard normal using complementary error function
+	// P(Z > z) = 0.5 * erfc(z / sqrt(2))
+	pValue := 0.5 * math.Erfc(z/math.Sqrt(2.0))
+
+	// Clamp to [0, 1]
+	if pValue < 0 {
+		pValue = 0
+	}
+	if pValue > 1 {
+		pValue = 1
+	}
+
+	return pValue
 }
 
 // convertRankings converts the metrics rankings to our format

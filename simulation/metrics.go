@@ -100,10 +100,16 @@ func (m *MetricsCollector) ProcessGameResults(results []GameResult) {
 			}
 		}
 
-		// Track survival time for winner's characters (they survived the full game)
-		for _, charName := range result.WinnerCharacters {
-			if stats, exists := m.CharacterStats[charName]; exists {
-				stats.TotalSurvivalTurns += result.TotalTurns
+		// Track survival time for all characters using elimination data
+		for playerID, playerCards := range result.PlayerStartingCards {
+			survivalTurns := result.TotalTurns // Default: survived entire game
+			if elimTurn, eliminated := result.EliminationTurns[playerID]; eliminated {
+				survivalTurns = elimTurn
+			}
+			for _, charName := range playerCards {
+				if stats, exists := m.CharacterStats[charName]; exists {
+					stats.TotalSurvivalTurns += survivalTurns
+				}
 			}
 		}
 

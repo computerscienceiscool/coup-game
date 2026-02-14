@@ -73,6 +73,9 @@ func TestMetricsCollection(t *testing.T) {
 				0: {"Duke", "Captain"},
 				1: {"Assassin", "Contessa"},
 			},
+			EliminationTurns: map[int]int{
+				1: 8, // Player 1 eliminated on turn 8
+			},
 			TotalTurns: 10,
 		},
 	}

@@ -19,6 +19,9 @@ type Config struct {
 	Verbose             bool
 	Seed                int64
 	OutputDir           string
+	AIMode              string
+	CompetitiveLevel    game.CompetitiveLevel
+	CharacterBalance    bool
 }
 
 // GameResult stores the outcome of a single game
@@ -28,6 +31,7 @@ type GameResult struct {
 	WinnerID            int
 	WinnerCharacters    []string
 	PlayerStartingCards map[int][]string // Starting characters for each player
+	EliminationTurns    map[int]int      // playerID -> turn eliminated
 	TotalTurns          int
 	Actions             []game.ActionLog
 	StartTime           time.Time
@@ -41,6 +45,7 @@ type SimulationResults struct {
 	StartTime        time.Time
 	EndTime          time.Time
 	Config           Config
+	ErrorCount       int // Number of games that failed to create or run
 	CharacterStats   map[string]*CharacterStats
 	PlayerCountStats map[int]*PlayerCountStats
 }
@@ -75,6 +80,7 @@ type Simulator struct {
 	ResultChannel      chan GameResult
 	WaitGroup          sync.WaitGroup
 	Progress           int64
+	ErrorCount         int64
 	TotalGames         int
 	StartTime          time.Time
 	ProgressInterval   time.Duration
@@ -121,11 +127,12 @@ func (s *Simulator) Run() SimulationResults {
 	// Return simulation results
 	endTime := time.Now()
 	return SimulationResults{
-		Results:   s.Results,
-		Duration:  endTime.Sub(s.StartTime),
-		StartTime: s.StartTime,
-		EndTime:   endTime,
-		Config:    s.Config,
+		Results:    s.Results,
+		Duration:   endTime.Sub(s.StartTime),
+		StartTime:  s.StartTime,
+		EndTime:    endTime,
+		Config:     s.Config,
+		ErrorCount: int(atomic.LoadInt64(&s.ErrorCount)),
 	}
 }
 
@@ -144,10 +151,25 @@ func (s *Simulator) worker(workerID int) {
 		// Generate game-specific seed
 		gameSeed := workerSeed + int64(gameID)
 
-		// Create and run game
-		g, err := game.NewGame(playerCount, gameSeed)
+		// Create game based on AI mode
+		var g *game.Game
+		var err error
+
+		switch s.Config.AIMode {
+		case "original":
+			g, err = game.NewGameWithOriginalAI(playerCount, gameSeed)
+		case "mixed":
+			g, err = game.NewGameWithMixedAIs(playerCount, gameSeed)
+		default:
+			var aiTypes []game.AIPlayerType
+			if s.Config.CharacterBalance {
+				aiTypes = s.generateBalancedAITypes(playerCount, gameID, rng)
+			}
+			g, err = game.NewGameWithAITypes(playerCount, aiTypes, s.Config.CompetitiveLevel, gameSeed)
+		}
+
 		if err != nil {
-			fmt.Printf("Error creating game %d: %v\n", gameID, err)
+			atomic.AddInt64(&s.ErrorCount, 1)
 			continue
 		}
 
@@ -178,6 +200,7 @@ func (s *Simulator) worker(workerID int) {
 			WinnerID:            winner.GetID(),
 			WinnerCharacters:    winnerChars,
 			PlayerStartingCards: playerStartingCards,
+			EliminationTurns:    g.EliminationTurns,
 			TotalTurns:          g.Turn,
 			Actions:             g.ActionLog,
 			StartTime:           startTime,
@@ -254,8 +277,28 @@ func (s *Simulator) updateProgress(progress int64) {
 		eta = "unknown"
 	}
 
-	fmt.Printf("\r[%.2f%%] %d/%d games | %.2f games/sec | ETA: %s",
-		percentComplete, progress, s.TotalGames, gamesPerSecond, eta)
+	fmt.Printf("\r[%.2f%%] %d/%d games | %.2f games/sec | ETA: %s | AI: %s",
+		percentComplete, progress, s.TotalGames, gamesPerSecond, eta, s.Config.AIMode)
+}
+
+// generateBalancedAITypes creates a balanced distribution of AI character preferences
+func (s *Simulator) generateBalancedAITypes(playerCount int, gameID int, rng *rand.Rand) []game.AIPlayerType {
+	aiTypes := make([]game.AIPlayerType, playerCount)
+
+	// Ensure each character type appears roughly equally across games
+	baseType := (gameID % 5) // 5 character types
+
+	for i := 0; i < playerCount; i++ {
+		aiTypes[i] = game.AIPlayerType((baseType + i) % 5)
+	}
+
+	// Shuffle the assignments to avoid bias
+	for i := len(aiTypes) - 1; i > 0; i-- {
+		j := rng.Intn(i + 1)
+		aiTypes[i], aiTypes[j] = aiTypes[j], aiTypes[i]
+	}
+
+	return aiTypes
 }
 
 // formatDuration formats a duration for display

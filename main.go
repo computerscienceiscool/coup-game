@@ -85,10 +85,6 @@ func main() {
 		*seed = time.Now().UnixNano()
 	}
 
-	// Pass the verbose flag to the game package
-	// If quiet mode is enabled, disable verbose output
-	game.Verbose = *verbose && !*quiet
-
 	// If test-comp flag is set, run competitiveness test and exit
 	if *testComp > 0 {
 		testCompetitiveLevels(*testComp, *seed)
@@ -150,8 +146,8 @@ func main() {
 		*aiMode = "mixed"
 	}
 
-	// Configure the enhanced simulation
-	config := simulation.EnhancedConfig{
+	// Configure the simulation
+	config := simulation.Config{
 		TotalGames:          *games,
 		Workers:             *workers,
 		Verbose:             *verbose,
@@ -172,11 +168,11 @@ func main() {
 		return
 	}
 
-	// Initialize the enhanced simulator
+	// Initialize the simulator
 	if !*quiet {
 		fmt.Println("Initializing simulation...")
 	}
-	simulator := simulation.NewEnhancedSimulator(config)
+	simulator := simulation.NewSimulator(config)
 
 	// Run the simulation
 	if !*quiet {
@@ -203,8 +199,11 @@ func main() {
 
 	// Print summary
 	fmt.Println("\nSimulation Complete!")
-	fmt.Printf("Processed %d games in %s\n", *games, duration)
-	fmt.Printf("Games per second: %.2f\n", float64(*games)/duration.Seconds())
+	fmt.Printf("Processed %d games in %s\n", len(results.Results), duration)
+	if results.ErrorCount > 0 {
+		fmt.Printf("Warning: %d games failed to create and were skipped\n", results.ErrorCount)
+	}
+	fmt.Printf("Games per second: %.2f\n", float64(len(results.Results))/duration.Seconds())
 
 	// Print character rankings
 	fmt.Println("\nCharacter Power Rankings:")

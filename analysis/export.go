@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 // GenerateCSVs creates all required CSV reports
-func GenerateCSVs(stats *StatisticsResult, outputDir string) error {
+func GenerateCSVs(stats *StatisticsResult, results *simulation.SimulationResults, outputDir string) error {
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -23,11 +24,11 @@ func GenerateCSVs(stats *StatisticsResult, outputDir string) error {
 		return err
 	}
 
-	if err := generateGameLogs(stats, outputDir); err != nil {
+	if err := generateGameLogs(results, outputDir); err != nil {
 		return err
 	}
 
-	if err := generateActionLogs(stats, outputDir); err != nil {
+	if err := generateActionLogs(results, outputDir); err != nil {
 		return err
 	}
 
@@ -89,7 +90,7 @@ func generateCharacterStats(stats *StatisticsResult, outputDir string) error {
 }
 
 // generateGameLogs creates the game_logs.csv file
-func generateGameLogs(stats *StatisticsResult, outputDir string) error {
+func generateGameLogs(results *simulation.SimulationResults, outputDir string) error {
 	filePath := filepath.Join(outputDir, "game_logs.csv")
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -113,12 +114,6 @@ func generateGameLogs(stats *StatisticsResult, outputDir string) error {
 		return fmt.Errorf("error writing header: %w", err)
 	}
 
-	// Get the simulation results from stats
-	results := simulationResults(stats)
-	if results == nil {
-		return fmt.Errorf("simulation results not available")
-	}
-
 	// Write game data
 	for _, result := range results.Results {
 		row := []string{
@@ -138,7 +133,7 @@ func generateGameLogs(stats *StatisticsResult, outputDir string) error {
 }
 
 // generateActionLogs creates the action_logs.csv file
-func generateActionLogs(stats *StatisticsResult, outputDir string) error {
+func generateActionLogs(results *simulation.SimulationResults, outputDir string) error {
 	filePath := filepath.Join(outputDir, "action_logs.csv")
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -164,23 +159,9 @@ func generateActionLogs(stats *StatisticsResult, outputDir string) error {
 		return fmt.Errorf("error writing header: %w", err)
 	}
 
-	// Get the simulation results from stats
-	results := simulationResults(stats)
-	if results == nil {
-		return fmt.Errorf("simulation results not available")
-	}
-
-	// Write action data (limit to first 10k actions to avoid huge files)
-	actionCount := 0
-	maxActions := 10000
-
+	// Write all action data
 	for _, game := range results.Results {
 		for _, action := range game.Actions {
-			// Skip if we've hit the max
-			if actionCount >= maxActions {
-				break
-			}
-
 			target := "-"
 			if action.Target >= 0 {
 				target = strconv.Itoa(action.Target)
@@ -204,8 +185,6 @@ func generateActionLogs(stats *StatisticsResult, outputDir string) error {
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("error writing action row: %w", err)
 			}
-
-			actionCount++
 		}
 	}
 
@@ -236,9 +215,24 @@ func generatePlayerCountAnalysis(stats *StatisticsResult, outputDir string) erro
 		return fmt.Errorf("error writing header: %w", err)
 	}
 
-	// Write player count data
-	for count, pcStats := range stats.PlayerCountStats {
-		for char, winRate := range pcStats.CharacterWinRates {
+	// Write player count data (sorted for deterministic output)
+	playerCounts := make([]int, 0, len(stats.PlayerCountStats))
+	for count := range stats.PlayerCountStats {
+		playerCounts = append(playerCounts, count)
+	}
+	sort.Ints(playerCounts)
+
+	for _, count := range playerCounts {
+		pcStats := stats.PlayerCountStats[count]
+
+		charNames := make([]string, 0, len(pcStats.CharacterWinRates))
+		for char := range pcStats.CharacterWinRates {
+			charNames = append(charNames, char)
+		}
+		sort.Strings(charNames)
+
+		for _, char := range charNames {
+			winRate := pcStats.CharacterWinRates[char]
 			// Get character stats
 			charStats := stats.CharacterStats[char]
 
@@ -282,10 +276,3 @@ func formatCharacters(chars []string) string {
 	return result
 }
 
-// simulationResults retrieves the simulation.SimulationResults from stats
-// This is a hack since we don't have direct access to the original results
-func simulationResults(stats *StatisticsResult) *simulation.SimulationResults {
-	// In a real implementation, we would have proper access to the results
-	// For now, return nil and handle the error
-	return nil
-}
