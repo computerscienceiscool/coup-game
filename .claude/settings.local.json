@@ -12,7 +12,22 @@
       "Bash(wc:*)",
       "Bash(git push:*)",
       "Bash(git stash pop:*)",
-      "Bash(git stash drop:*)"
+      "Bash(git stash drop:*)",
+      "Bash(awk -F',' 'NR>1 {n=gsub\\(/,/,\",\"\\); }' game_logs.csv)",
+      "Bash(python3 -)",
+      "Bash(go version *)",
+      "Bash(goenv versions *)",
+      "Read(//home/jj/.goenv/versions/**)",
+      "Bash(export GOENV_VERSION=1.22.12)",
+      "Bash(./coup-bench --games 100000 --quiet --seed 42 --ai mixed --output /tmp/claude-1000/-home-jj-lab-coup-game/c5a0c770-4acc-4b51-915f-c6877b9b853b/scratchpad/bench)",
+      "Bash(./coup-fixed --games 100000 --quiet --seed 42 --ai mixed --output /tmp/claude-1000/-home-jj-lab-coup-game/c5a0c770-4acc-4b51-915f-c6877b9b853b/scratchpad/fixed-run)",
+      "Bash(git -C /home/jj/lab/coup-game status --short)",
+      "Bash(GOFLAGS=-mod=mod go run .)",
+      "Bash(/tmp/claude-1000/-home-jj-lab-coup-game/c5a0c770-4acc-4b51-915f-c6877b9b853b/scratchpad/coup-v2 --games 20000 --quiet --seed 7 --ai mixed --output /tmp/claude-1000/-home-jj-lab-coup-game/c5a0c770-4acc-4b51-915f-c6877b9b853b/scratchpad/v2-check)",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(git reset *)",
+      "Bash(git rm *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

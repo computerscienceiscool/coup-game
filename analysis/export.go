@@ -51,17 +51,20 @@ func generateCharacterStats(stats *StatisticsResult, outputDir string) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write header
+	// Write header. Metric definitions live in docs/specification.md.
 	header := []string{
 		"Character",
-		"WinRate",
-		"ActionSuccessRate",
-		"SurvivalTime",
-		"BluffSuccessRate",
-		"ChallengeSuccessRate",
-		"BlockSuccessRate",
-		"TimesUsed",
-		"TimesWon",
+		"DealtWinRate",      // P(win | dealt the character at game start)
+		"FinalHandWinRate",  // share of games whose winner ended holding it
+		"ActionSuccessRate", // signature action successes/attempts
+		"BlockSuccessRate",  // blocks claiming it that stopped the action
+		"BluffRate",         // share of its claims made without the card
+		"BluffSuccessRate",  // bluffed claims that went unchallenged
+		"ChallengedRate",    // share of its claims that were challenged
+		"AvgTurnsSurvived",  // average turns survived by players dealt it
+		"TimesDealt",
+		"WinsWhenDealt",
+		"PowerScore",        // composite: 0.6*win + 0.15*action + 0.1*block + 0.1*bluff + 0.05*survival
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("error writing header: %w", err)
@@ -72,14 +75,17 @@ func generateCharacterStats(stats *StatisticsResult, outputDir string) error {
 		charStats := stats.CharacterStats[char.Name]
 		row := []string{
 			charStats.Name,
-			formatPercent(charStats.WinRate),
+			formatPercent(charStats.DealtWinRate),
+			formatPercent(charStats.FinalHandWinRate),
 			formatPercent(charStats.ActionSuccessRate),
-			fmt.Sprintf("%.2f", charStats.SurvivalTime),
-			formatPercent(charStats.BluffSuccessRate),
-			formatPercent(charStats.ChallengeSuccessRate),
 			formatPercent(charStats.BlockSuccessRate),
-			strconv.Itoa(charStats.TimesUsed),
-			strconv.Itoa(charStats.TimesWon),
+			formatPercent(charStats.BluffRate),
+			formatPercent(charStats.BluffSuccessRate),
+			formatPercent(charStats.ChallengedRate),
+			fmt.Sprintf("%.2f", charStats.SurvivalTime),
+			strconv.Itoa(charStats.TimesDealt),
+			strconv.Itoa(charStats.WinsWhenDealt),
+			fmt.Sprintf("%.4f", char.PowerScore),
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("error writing character row: %w", err)
@@ -144,7 +150,10 @@ func generateActionLogs(results *simulation.SimulationResults, outputDir string)
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write header
+	// Write header. Blocker records every block attempt (including blocks
+	// later defeated by a challenge); BlockSucceeded says whether the block
+	// stopped the action. ActorHadCard/BlockerHadCard are ground truth for
+	// bluff analysis and are never shown to AI players.
 	header := []string{
 		"GameID",
 		"Turn",
@@ -153,7 +162,11 @@ func generateActionLogs(results *simulation.SimulationResults, outputDir string)
 		"Target",
 		"Success",
 		"Challenged",
-		"Blocked",
+		"ActorHadCard",
+		"Blocker",
+		"BlockingCharacter",
+		"BlockChallenged",
+		"BlockSucceeded",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("error writing header: %w", err)
@@ -180,7 +193,11 @@ func generateActionLogs(results *simulation.SimulationResults, outputDir string)
 				target,
 				formatBool(action.Success),
 				formatBool(action.Challenged),
+				formatBool(action.ActorHadCard),
 				blocker,
+				action.BlockingCharacter,
+				formatBool(action.BlockChallenged),
+				formatBool(action.BlockSucceeded),
 			}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("error writing action row: %w", err)
@@ -203,12 +220,12 @@ func generatePlayerCountAnalysis(stats *StatisticsResult, outputDir string) erro
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write header
+	// Write header. DealtWinRate is per player count; AvgGameLength is the
+	// measured average number of actions per game for that player count.
 	header := []string{
 		"PlayerCount",
 		"Character",
-		"WinRate",
-		"AvgSurvivalTime",
+		"DealtWinRate",
 		"AvgGameLength",
 	}
 	if err := writer.Write(header); err != nil {
@@ -232,15 +249,10 @@ func generatePlayerCountAnalysis(stats *StatisticsResult, outputDir string) erro
 		sort.Strings(charNames)
 
 		for _, char := range charNames {
-			winRate := pcStats.CharacterWinRates[char]
-			// Get character stats
-			charStats := stats.CharacterStats[char]
-
 			row := []string{
 				strconv.Itoa(count),
 				char,
-				formatPercent(winRate),
-				fmt.Sprintf("%.2f", charStats.SurvivalTime),
+				formatPercent(pcStats.CharacterWinRates[char]),
 				fmt.Sprintf("%.2f", pcStats.AverageGameLength),
 			}
 			if err := writer.Write(row); err != nil {

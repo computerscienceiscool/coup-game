@@ -343,17 +343,15 @@ func (a *AssassinateAction) Name() string {
 
 // Execute performs the assassinate action
 func (a *AssassinateAction) Execute(g *Game) error {
-	// Note: 3-coin cost is paid upfront in ResolveAction (per Coup rules,
-	// the cost is paid even if the action is blocked or challenged)
+	// Note: the 3-coin cost is paid upfront in ResolveAction (it stays paid
+	// if the action is blocked, and is refunded if successfully challenged)
 
 	if !a.Target.IsAlive() {
 		return errors.New("target is not alive")
 	}
 
-	// Target loses an influence
-	card := a.Target.LoseInfluence()
-	g.Deck.Return([]Card{card})
-	g.Deck.Shuffle()
+	// Target loses an influence, which is removed from play
+	g.Discard(a.Target.LoseInfluence())
 
 	return nil
 }
@@ -431,10 +429,8 @@ func (a *CoupAction) Execute(g *Game) error {
 		return err
 	}
 
-	// Target loses an influence
-	card := a.Target.LoseInfluence()
-	g.Deck.Return([]Card{card})
-	g.Deck.Shuffle()
+	// Target loses an influence, which is removed from play
+	g.Discard(a.Target.LoseInfluence())
 
 	return nil
 }
@@ -516,6 +512,10 @@ func (a *ExchangeAction) Execute(g *Game) error {
 	// Return cards to deck and shuffle
 	g.Deck.Return(returned)
 	g.Deck.Shuffle()
+
+	// The player's hand may have changed, so their earlier claims no longer
+	// carry information
+	g.ResetClaimsAfterExchange(a.Actor.GetID())
 
 	return nil
 }

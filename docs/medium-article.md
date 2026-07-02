@@ -1,6 +1,6 @@
-# Simulating 100,000 Games of Coup: What We Learned About Bluffing, Strategy, and Character Balance
+# Simulating One Million Games of Coup: What the Data Really Says About Bluffing, Strategy, and Character Balance
 
-*How I built a high-performance game simulator in Go to answer the age-old question: which Coup character is actually the strongest?*
+*How I built a high-performance game simulator in Go, found the bugs in my own million-game dataset, fixed them, taught the AIs to count cards, and got a different answer than I started with.*
 
 ---
 
@@ -10,7 +10,7 @@ If you've ever played Coup, the indie bluffing card game that's taken over game 
 
 Is it the Duke, with its reliable income-generating Tax action? The Assassin, who can eliminate opponents for just 3 coins? Or maybe the Ambassador, with its defensive flexibility and card-swapping ability?
 
-After countless heated debates at my local game night, I decided to settle this scientifically. I built a simulator in Go that could run hundreds of thousands of games with AI players and track every action, every bluff, every successful challenge. The results surprised me.
+After countless heated debates at my local game night, I decided to settle this scientifically. I built a simulator in Go, ran a million games, wrote up the results — and then discovered, by auditing my own data, that the simulator wasn't playing Coup by the rules. This article is the story of both halves: the answer, and what it took to make the answer trustworthy.
 
 ---
 
@@ -24,7 +24,7 @@ The game has simple rules but deep strategy:
 - **Steal (Captain)**: Take 2 coins from another player
 - **Exchange (Ambassador)**: Swap your cards with new ones from the deck
 - **Block Foreign Aid (Duke)**: Stop someone from taking 2 coins
-- **Block Assassination (Contessa)**: Stop someone from assassinating you
+- **Block Assassination (Contessa)**: Stop someone from assassinating you — only if you're the target
 - **Block Stealing (Captain/Ambassador)**: Stop someone from stealing from you
 
 Each player starts with 2 hidden character cards. When you lose both influences (by failed challenges or successful attacks), you're eliminated. Last player standing wins.
@@ -33,185 +33,141 @@ Each player starts with 2 hidden character cards. When you lose both influences 
 
 ## Building the Simulator
 
-I wrote the simulator in Go for its excellent concurrency support and performance. The architecture consists of three main components:
+The simulator is written in Go — three components:
 
-### 1. Game Engine (`game/`)
-Implements all Coup rules: actions, challenges, blocks, and state management. The engine supports:
-- Clockwise turn order with fair challenge/block ordering
-- Proper card tracking and deck management
-- Force-end protection (games timeout at 500 turns)
-- Detailed action logging for analysis
+**Game engine** (`game/`): the full action/challenge/block loop, clockwise resolution order, forced Coup at 10+ coins, lost influence face-up and out of play, and an action log that records *ground truth* — whether each claim was actually a bluff — for analysis (the AIs never see it).
 
-### 2. AI Players (`game/enhanced_player.go`)
-I implemented three competitive levels of AI, each with character preferences:
+**AI players** (`game/enhanced_player.go`): three competitive levels with character preferences, from Low (5–15% bluff, 30% challenge, no memory) through Medium (30–50% bluff, 50% challenge) to High (50–80% bluff, 60–70% challenge). Crucially, Medium and High AIs now **count cards**: the engine exposes the public discard pile and every player's claim history, so a card-counting AI always challenges a claim whose three copies it can fully account for, never makes a visibly-impossible bluff, and (at High) scales its suspicion by how many distinct characters you've claimed.
 
-**Low Competitive** (30% bluff, 40% challenge):
-- Random card exchange
-- Basic threat assessment
-- Defensive playstyle
+**Simulation engine** (`simulation/`): a goroutine worker pool that runs 9,000–27,000 games per second on my 8-core machine, with per-game seeds derived only from the base seed and game ID — so runs are exactly reproducible regardless of scheduling.
 
-**Medium Competitive** (40% bluff, 50% challenge):
-- Strategic card exchange (prefers Duke > Assassin > others)
-- Moderate aggression
-- Balances offense and defense
-
-**High Competitive** (50-80% bluff, 60% challenge):
-- Optimized card exchange with scoring system
-- Aggressive playstyle
-- Character-specific strategies (Assassin AI bluffs 80%!)
-- Always takes Tax when possible
-
-Each AI also has character preferences that influence their playstyle. A Captain-focused AI will prioritize stealing, while a Duke-focused AI maximizes tax income.
-
-### 3. Simulation Engine (`simulation/`)
-Runs thousands of games concurrently using goroutines:
-- Worker pool pattern with configurable parallelism
-- Atomic operations for thread-safe metrics
-- Real-time progress tracking
-- Comprehensive statistics collection
-
-The simulator can process over **30,000 games per second** on a modern CPU, making it possible to gather statistically significant data quickly.
+The headline dataset: **1,000,000 games in mixed-AI mode (seed 42), 200,000 each at 2–6 players, 10.4 million logged actions.** Every number below comes from CSVs committed in the repo.
 
 ---
 
-## The Results: Duke Dominates
+## The Headline: It Depends on the Table Size
 
-After running 100,000 games with mixed AI competitive levels, the results were clear:
+The primary metric is the cleanest question the data can answer: **if you're dealt a character at the start of the game, how often do you go on to win?** Across all table sizes (a random dealt slot wins 25.3% of the time as baseline):
 
 ```
-🥇 Duke         75.70% win rate  ██████████████████████████████████████████████████
-🥈 Ambassador   63.92% win rate  ██████████████████████████████████████████
-🥉 Captain      61.86% win rate  ████████████████████████████████████████
-4️⃣  Assassin    52.51% win rate  ██████████████████████████████████
-5️⃣  Contessa    44.00% win rate  █████████████████████████████
+🥇 Captain      29.26%  ██████████████████████████████████████████████████
+🥈 Duke         28.50%  █████████████████████████████████████████████████
+🥉 Ambassador   26.81%  ██████████████████████████████████████████████
+4️⃣  Assassin    22.06%  ██████████████████████████████████████
+5️⃣  Contessa    19.71%  ██████████████████████████████████
 ```
 
-**The Duke is dramatically overpowered**, appearing in winning hands 75.7% of the time. This isn't even close—it's a 12-point lead over the second-place character.
+**Captain, not Duke.** But the aggregate hides the real finding — the best card depends on how many people are at the table:
 
-### Why Is Duke So Strong?
+| Players | Best card | Runner-up |
+|---|---|---|
+| 2 | **Duke** 55.9% | Captain 53.3% |
+| 3 | **Duke** 38.3% | Captain 37.2% |
+| 4 | **Captain** 29.3% | Duke 28.8% |
+| 5 | **Captain** 24.5% | Duke 22.9% |
+| 6 | **Captain** 21.3% | Duke 19.0% |
 
-The data reveals several factors:
+Duke rules heads-up, where Tax's guaranteed economy races fastest. Captain takes over as the table grows: more opponents means more coins in circulation to steal, more steal targets, and — since Captain also *blocks* stealing — more chances for the card to matter. Contessa is last at every single table size (11.6% in 6-player games, barely two-thirds of its fair share).
 
-1. **Economic Advantage**: Tax generates 3 coins per turn with no downside. This reliable income compounds over the course of a game.
+Here's the twist that justifies the whole metric exercise: if you instead ask "which character did winners *end* the game holding?", **Duke comes out first** (30.6% of winning final hands vs Captain's 27.1%). Winners keep and acquire Dukes. But being *dealt* a Captain wins more games. Which one is "the strongest character"? Depends on the question — which is exactly why an article should say which question it's answering.
 
-2. **Defensive Utility**: Duke can block Foreign Aid, limiting opponents' economic growth while accelerating your own.
+### The Contessa Problem, Confirmed
 
-3. **Bluff-Friendly**: Since Duke is primarily defensive and economic, you can bluff it without immediately drawing aggression. Claiming Duke to Tax is less suspicious than claiming Assassin to kill someone.
-
-4. **Always Useful**: Unlike Contessa (only useful when targeted by Assassination) or Captain (useless when opponents are broke), Duke provides value in every game state.
-
-### The Contessa Problem
-
-On the flip side, Contessa has the lowest win rate at 44%. Why?
-
-- **Hyper-specialized**: Only blocks Assassination attempts
-- **Purely reactive**: Provides no offensive or economic value
-- **Telegraphs weakness**: If you block an assassination with Contessa, you've revealed you don't have Duke for economy or Assassin for offense
-- **Low threat priority**: Opponents won't target you for assassination if you're already behind economically
-
-The data suggests Contessa is a "trap" card—it feels important because it saves you from assassination, but in practice, not dying isn't as valuable as generating income or pressuring opponents.
+Contessa's story survived every bug fix: last place at every table size. It does one thing, only when you're targeted, and assassinations are just 8.5% of all actions (succeeding 30.7% of the time). One genuinely funny wrinkle: Contessa has the *best* bluff success rate in the game — 41.7% of Contessa claims made without the card went unchallenged, the highest of any character — because challenging a Contessa block means betting an influence against a card people actually tend to keep. The card is weak; *claiming* it is oddly safe.
 
 ---
 
-## Character-Specific AI Performance
+## The Bluffing Economy
 
-I also ran specialized simulations where each AI had a character preference:
+Ground-truth logging (the engine records whether each claim was real) turns bluffing from vibes into numbers, across 10.4 million actions:
 
-### Duke-Focused AI
-- **Win rate**: 78.3% (highest)
-- **Average game length**: 19 turns
-- **Strategy**: Maximize Tax usage, block Foreign Aid aggressively
-- **Key insight**: Consistent economy beats explosive plays
+- **~70% of all character claims are bluffs.** These AIs choose actions with only weak regard for their actual cards — much like your one friend.
+- **70.2% of the 5.0 million challenges caught a bluff.** In a world where most claims are lies, challenging is very good business.
+- Foreign Aid drew a block attempt 71.9% of the time, and 69.6% of those blocks stuck — the two-coin action succeeds only half the time.
+- **The Steal paradox persists**: Steal is the most popular action (25.8% of all actions) and the least successful (19.8%) — 69.9% of attempts get challenged, and survivors still face target blocks that stick 80.7% of the time.
 
-### Assassin-Focused AI
-- **Win rate**: 56.8%
-- **Average game length**: 15 turns (shortest)
-- **Strategy**: Rush to 3 coins, eliminate threats early
-- **Key insight**: High risk, high reward—can dominate or flame out
+| Action | Share | Bluffed | Challenged | Succeeded |
+|---|---|---|---|---|
+| Steal | 25.8% | 69.9% | 69.9% | 19.8% |
+| Tax | 20.0% | 70.4% | 65.6% | 53.4% |
+| Exchange | 18.2% | 67.9% | 63.5% | 56.2% |
+| Income | 16.2% | — | — | 100% |
+| Foreign Aid | 10.4% | — | — | 50.0% |
+| Assassinate | 8.5% | 69.7% | 59.5% | 30.7% |
+| Coup | 1.0% | — | — | 100% |
 
-### Ambassador-Focused AI
-- **Win rate**: 65.1%
-- **Average game length**: 22 turns (longest)
-- **Strategy**: Card quality over quantity, defensive blocking
-- **Key insight**: Consistency and adaptability pay off
-
-### Captain-Focused AI
-- **Win rate**: 59.4%
-- **Average game length**: 17 turns
-- **Strategy**: Steal aggressively, pressure weak players
-- **Key insight**: Strong mid-game, vulnerable to blocks
-
-### Contessa-Focused AI
-- **Win rate**: 41.2% (lowest)
-- **Average game length**: 18 turns
-- **Strategy**: Defensive, reactive, economically passive
-- **Key insight**: Surviving ≠ winning
+Games are quick: 5.9 actions on average for 2 players, scaling to 14.4 for 6. Half of all winners (52.3%) limp across the finish line with a single influence left.
 
 ---
 
-## Competitive Level Analysis
+## Turn Order Matters — More Than I Expected
 
-Running 10,000 games with mixed competitive levels revealed interesting meta-game dynamics:
+Win rate by seat position, one million games:
 
-**High Competitive AI**: 47.3% win rate
-- Most aggressive
-- Highest bluff rate (50-80%)
-- Best at exploiting Duke
+- **4 players** (fair share 25%): seat 1 wins 22.1% … seat 4 wins **29.2%**
+- **6 players** (fair share 16.7%): seat 1 wins 14.2% … seat 6 wins **21.2%**
 
-**Medium Competitive AI**: 31.5% win rate
-- Balanced approach
-- Moderate bluffing (40%)
-- Decent at all strategies
-
-**Low Competitive AI**: 21.2% win rate
-- Too passive
-- Under-utilizes bluffing
-- Falls behind economically
-
-The key takeaway: **aggression pays off**. High competitive AIs win nearly half the time despite being only 1/3 of the player pool. The ability to bluff effectively and challenge correctly creates a significant skill gap.
+The last seat beats the first by 7 percentage points in a 6-player game. That's enormous. Part of this is real Coup — early actors expose claims while everyone is still alive and dangerous. But part of it is a simulator convention I want to flag honestly: challenges are offered clockwise from the actor, first-taker-wins, which concentrates challenge risk and reward on the seats right after the actor. Tabletop Coup resolves "who speaks first" by racing humans, which no simulator reproduces exactly. Treat the direction (late seats good) as believable and the magnitude as variant-specific.
 
 ---
 
-## Statistical Significance
+## Does Skill Help? Card Counting Changed the Answer
 
-To ensure these results weren't flukes, I implemented a chi-squared goodness-of-fit test (with Wilson-Hilferty approximation for p-value calculation). The test compares observed character win rates against a uniform distribution.
+I ran a second experiment: one million 4-player games where each seat gets a randomly chosen Low, Medium, or High competitive AI (fair share ≈33.3% each).
 
-**Result**: p < 0.0001
+Before the AIs had card memory, this experiment embarrassed the "skilled" bots: **Low won 36.7%, High only 30.9%.** High AIs bluffed and challenged constantly in a world where every failed bluff and wrong challenge costs an influence — aggression was just self-harm with extra steps.
 
-This means there's less than a 0.01% chance these results occurred by random chance. Duke's dominance is statistically real.
+With card counting, the gap nearly closes: **Low 33.8%, Medium 32.7%, High 33.5%.** The High AIs' aggression stops being a tax once their challenges are informed (impossible claims are free wins) and their bluffs are never self-evidently fake. One amusing constant: High-competitive winners end the game holding an Ambassador far more often than anything else (19.4% of their final card slots) — the optimized Exchange logic hoards its favorite cards.
 
----
-
-## Game Balance Implications
-
-These results have real implications for how Coup is played:
-
-### For Players:
-1. **Always keep Duke if you draw it** (obviously)
-2. **Bluff Duke more often** when you don't have it
-3. **Challenge Duke claims less frequently** since everyone will claim it
-4. **Deprioritize Contessa** unless facing an Assassin-heavy meta
-5. **Be more aggressive** with challenges and actions
-
-### For House Rules:
-Some communities have experimented with balance patches:
-
-**Nerfed Duke**: Tax gives 2 coins instead of 3
-- Result: Win rate drops to 61.4% (still strong but not dominant)
-
-**Buffed Contessa**: Can block Stealing in addition to Assassination
-- Result: Win rate rises to 54.7% (now competitive)
-
-**Captain Buff**: Steal takes 3 coins instead of 2
-- Result: Win rate rises to 68.9% (now too strong!)
+The honest caveat stands: this measures *these heuristics*, not human skill. The AIs count certainties; they don't yet do the Bayesian "you've claimed three different characters in five turns" glare that a good human brings.
 
 ---
 
-## Technical Deep Dive: Building a Fast Simulator
+## Before and After: What Fixing the Engine Changed
 
-For the technically inclined, here's how I achieved 30,000+ games per second:
+The first version of this analysis ran on an engine with real bugs, which I found by auditing the published CSVs — the data itself was the whistleblower. What changed when they were fixed:
 
-### Concurrency Architecture
+| Measurement | Buggy engine | Fixed engine |
+|---|---|---|
+| Winners ending with impossible 3–10 card hands | 48.9% of games | 0 (max is 2, enforced by tests) |
+| Steal/Assassinate blocks by non-targets (illegal) | 40.3% of blocks | 0 |
+| Bit-identical duplicate games (seed collisions) | 67.5% | 8.8%, all coincidental short games |
+| Average game length | 13.1 actions | 10.4 actions |
+| Steal success rate | 12.4% | 19.8% |
+| Assassination success rate | 25.6% | 30.7% |
+| "Best character" | Duke, by every (broken) metric | Duke ≤3 players, Captain ≥4 |
+
+The worst bug was subtle and delicious: when a challenged player *proved* their claim, the engine gave them a replacement card **without removing the revealed one** — every successfully defended challenge minted a free extra life. One "winner" finished holding ten influence cards in a game whose legal maximum is two. Nearly half the dataset's winners had impossible hands, and nobody noticed until the hand sizes were tabulated.
+
+The moral I keep relearning: **a simulator is a claim about a game's rules, and your own output data is how the claim gets audited.** The fix suite now asserts card conservation — exactly 15 cards, at most 3 per character, at most 2 per hand — after *every action* of a thousand test games.
+
+---
+
+## How Much Should You Trust These Numbers?
+
+More than the last batch. Specifically:
+
+- **The engine is rule-faithful and test-enforced** (card economy invariants, target-only blocks, assassination cost rules, challenge reveal flow), and runs reproduce exactly from a seed.
+- **Every metric is measured, never estimated** — earlier versions of the pipeline fabricated per-player-count game lengths from a formula and published always-zero action stats; the schema now documents each column's definition (see `results/README.md`).
+- With ~1.5 million dealt slots per character, the win-rate differences dwarf sampling noise (the chi-squared test's p-value underflows to zero, though dealt slots aren't fully independent, so read it as "overwhelming," not as exact inference).
+- Remaining caveats: 8.8% of games (almost all 6-action 2-player games) coincidentally replay identical sequences; the challenge-order convention inflates the seat effect; and the AIs, while now card-counting, are still heuristics — not humans, and not yet full deduction engines.
+
+---
+
+## What This Suggests at the Table
+
+1. **Value Captain more, especially at full tables.** The consensus "Duke is best" holds only at 2–3 players in this data.
+2. **Challenge more than feels polite.** When claims are mostly opportunistic, challengers profit. Your friends bluff more than you think.
+3. **Steal less, or expect to be blocked.** Most-attempted, least-successful, in every version of this simulation.
+4. **Contessa is a trap** — but *claiming* Contessa is the safest bluff in the game. Read into that what you will.
+5. **Fight for a late seat.**
+
+---
+
+## Technical Deep Dive
+
+For the technically inclined:
+
 ```go
 // Worker pool pattern
 for i := 0; i < numWorkers; i++ {
@@ -224,99 +180,69 @@ for i := 0; i < numWorkers; i++ {
 }
 ```
 
-### Key Optimizations:
-1. **Buffered channels** reduce goroutine blocking
-2. **Atomic operations** for thread-safe counters
-3. **Object pooling** for game state (considered but not needed—GC handles it fine)
-4. **Deterministic RNG** with per-worker seeds for reproducibility
-5. **Streaming metrics** instead of storing all game data in memory
+Lessons that cost me:
 
-### Challenges Solved:
-- **Race conditions**: Used atomic operations for shared counters
-- **Memory usage**: Processed metrics incrementally instead of storing all 100k game results
-- **Non-deterministic map iteration**: Sorted keys before CSV export for reproducible diffs
-- **Challenge/block ordering bias**: Implemented clockwise iteration from acting player
-
----
-
-## What I Learned
-
-Beyond the game balance insights, this project taught me:
-
-1. **Simulation beats intuition**: My initial guess was that Assassin would dominate. I was wrong.
-
-2. **Statistical rigor matters**: Early prototypes had bugs that skewed results. Only through proper testing and significance calculations did I find them.
-
-3. **Performance compounds**: Small optimizations (atomic operations, buffered channels) added up to 10x speedups.
-
-4. **Visualization helps**: Adding colorful terminal output with progress bars and emoji made the tool much more satisfying to use.
-
-5. **Good architecture enables iteration**: Clean separation between game logic, AI, and simulation made it easy to add new AI strategies and balance tweaks.
+1. **Seed arithmetic is not free entropy.** `seed + workerID + gameID` collides whenever the sums match; two-thirds of my original million games were byte-identical duplicates, and results changed run-to-run because the OS scheduler picked which worker got which game. Per-game seeds now come from a SplitMix64 mix of (seed, gameID) alone.
+2. **Log what you'll want to disprove.** Because every action, challenge, block, and ground-truth "was it a bluff" bit goes to CSV, the impossible 10-card winner was *findable* instead of just suspectable.
+3. **Metrics need tests too.** A stats pipeline that outputs a plausible 75% will not warn you its denominator is wrong.
+4. **Invariant tests beat example tests for game engines.** "After every action: 15 cards, ≤3 per character, ≤2 per hand" caught more than every handwritten scenario combined.
 
 ---
 
 ## Try It Yourself
 
-The simulator is open source and available on GitHub: [github.com/computerscienceiscool/coup-game](https://github.com/computerscienceiscool/coup-game)
+The simulator is open source: [github.com/computerscienceiscool/coup-game](https://github.com/computerscienceiscool/coup-game)
 
-Run your own simulations:
 ```bash
-# Clone the repo
 git clone https://github.com/computerscienceiscool/coup-game
 cd coup-game
 
-# Run 100k games
-./coup-game --games 100000 --ai mixed --workers 8
+# The headline run (about two minutes on 8 cores)
+./coup-game --games 1000000 --workers 8 --seed 42 --ai mixed
 
-# Try different AI modes
-./coup-game --games 10000 --ai high     # All high competitive
-./coup-game --games 10000 --ai original # Original AI (30% bluff)
+# Compare AI modes
+./coup-game --games 200000 --ai high
+./coup-game --games 200000 --ai original
 
-# Enable character balancing
-./coup-game --games 50000 --balance --ai mixed
+# Skill-level experiment
+./coup-game --test-comp 1000000 --seed 42
+
+# Watch a single game play out
+./coup-game --replay --seed 42 --ai mixed
 ```
 
-The results are exported to CSV files for further analysis in Excel, Python, or R.
+Results export to CSV (schemas documented in `results/README.md`) for analysis in Excel, Python, or R.
 
 ---
 
 ## Future Work
 
-I'm planning several enhancements:
-
-1. **Human vs. AI**: Add a CLI interface for humans to play against the AI
-2. **Deep learning**: Train a neural network on successful strategies
-3. **Tournament mode**: Round-robin between different AI strategies
-4. **Advanced bluffing**: Context-aware bluffing that adapts to opponent behavior
-5. **Card counting**: AIs that track revealed cards (legal in real Coup!)
-6. **Balance optimizer**: Use genetic algorithms to find balanced character abilities
+1. **Deduction AI**: Bayesian tracking of opponents' likely hands from claims, blocks, and exchanges — counting cards is arithmetic; reading the table is inference
+2. **Randomized challenge priority**, to separate the real last-seat advantage from the polling-order artifact
+3. **House-rule experiments** (nerfed Duke, Contessa-blocks-Steal) — now that the baseline is trustworthy, balance patches can be measured against it
+4. **Tournament mode** pitting AI strategies head-to-head
+5. **Human vs. AI** CLI play mode
 
 ---
 
 ## Conclusion
 
-Coup is a brilliantly designed game, but like many games, it has balance quirks that only emerge through large-scale statistical analysis. Duke is clearly the strongest character, but that doesn't mean the game is broken—it just means Duke claims should be more hotly contested.
+I started this project to settle an argument, and the data did settle it — just not the way either side expected. *"Which character is strongest?"* turns out to be underspecified: **Duke, if it's date night; Captain, once the whole group shows up; never Contessa.** The deeper findings were about the game's texture: most claims are lies, challenging liars is profitable, the boring guaranteed actions are underrated, and the person who acts last has a real edge.
 
-The real beauty of Coup is in the bluffing and psychology, which my AI can't fully capture. But by simulating the mechanical aspects, we can understand the strategic foundations that skilled players build on.
-
-Next time you play Coup, remember: **Tax beats Assassinate**. Economy wins wars.
+But the finding I'll actually carry forward is about simulation itself. My first million games produced confident, plausible, wrong numbers — and the same CSVs that spread the wrong answer contained everything needed to catch it. Simulate boldly; then interrogate your own output like it's your opponent's third Duke claim of the night.
 
 ---
 
 ## Technical Stats
 
-- **Language**: Go 1.21
-- **Lines of Code**: ~3,500
-- **Test Coverage**: 85%
-- **Performance**: 30,000+ games/second on 8 cores
-- **Total Games Simulated**: 1,000,000+
-- **Development Time**: 2 weeks
-- **Most Fun Bug**: Assassin players used to pay 3 coins *after* being blocked, going negative!
+- **Language**: Go 1.22
+- **Lines of code**: ~5,500 (including tests)
+- **Test coverage**: 87.5% (game engine), 79.9% (simulation), enforced invariants under `-race`
+- **Performance**: 9,000–27,000 games/second on 8 cores, depending on AI mode
+- **Games behind this article**: 3,000,000 (1M mixed + 1M skill experiment + 1M across five AI modes), all seed 42, all reproducible
+- **Actions logged**: 10.4 million in the main run
+- **Most humbling bug**: a "winner" holding **10 influence cards** in a game whose legal maximum is 2 — undetected across 1,000,000 games until the data was audited
 
 ---
 
-*Want to discuss game balance, simulation techniques, or just argue about whether Contessa is underrated? Find me on Twitter [@yourhandle] or check out the project on GitHub.*
-
----
-
-**Update (2026-02-13)**: Since publishing this article, several game designers have reached out about using similar simulation techniques for their own games. If you're working on a competitive game and want to understand its balance, simulation is an incredibly powerful tool. Happy to share lessons learned!
+*Want to discuss game balance, simulation techniques, or argue about whether Captain is really better than Duke? Check out the project on GitHub.*

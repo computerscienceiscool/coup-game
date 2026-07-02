@@ -6,16 +6,27 @@ import (
 	"github.com/computerscienceiscool/coup-game/game"
 )
 
-// MetricsCollector gathers statistics from game results
+// MetricsCollector gathers statistics from game results.
+//
+// Metric definitions (also documented in docs/specification.md):
+//   - Dealt win rate:      P(a player wins | they were dealt the character at game start)
+//   - Final-hand win rate: share of games whose winner ended the game holding the character
+//   - Action success rate: successes/attempts of the character's signature action (Tax, Steal, ...)
+//   - Block success rate:  blocks claiming the character that actually stopped the action
+//     (defeated blocks are counted as attempts — the log keeps them)
+//   - Bluff rate:          share of the character's claims made without holding it (ground truth)
+//   - Bluff success rate:  bluffed claims that went unchallenged (a challenged bluff is always caught)
 type MetricsCollector struct {
 	// Game stats
 	TotalGames         int
 	GamesByPlayerCount map[int]int
+	TurnsByPlayerCount map[int]int
 	AverageGameLength  float64
 
 	// Character stats
-	CharacterStats             map[string]*CharacterStats
-	CharacterWinsByPlayerCount map[int]map[string]int // Wins per character per player count
+	CharacterStats     map[string]*CharacterStats
+	DealtByPlayerCount map[int]map[string]int // player-slots dealt, per character per player count
+	WinsByPlayerCount  map[int]map[string]int // dealt-and-won, per character per player count
 
 	// Composite rankings
 	RankedCharacters []CharacterRanking
@@ -24,34 +35,29 @@ type MetricsCollector struct {
 // CharacterRanking represents the strength ranking of a character
 type CharacterRanking struct {
 	Name         string
-	WinRate      float64
+	WinRate      float64 // Dealt win rate: P(win | dealt the character)
 	PowerScore   float64 // Composite ranking based on all metrics
-	ActionRate   float64
-	SurvivalRate float64
-	BluffSuccess float64
+	ActionRate   float64 // Signature action success rate
+	SurvivalRate float64 // Average fraction of the game survived when dealt
+	BluffSuccess float64 // Bluffed claims that went unchallenged
 }
 
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector() *MetricsCollector {
 	collector := &MetricsCollector{
-		GamesByPlayerCount:         make(map[int]int),
-		CharacterStats:             make(map[string]*CharacterStats),
-		CharacterWinsByPlayerCount: make(map[int]map[string]int),
+		GamesByPlayerCount: make(map[int]int),
+		TurnsByPlayerCount: make(map[int]int),
+		CharacterStats:     make(map[string]*CharacterStats),
+		DealtByPlayerCount: make(map[int]map[string]int),
+		WinsByPlayerCount:  make(map[int]map[string]int),
 	}
 
 	// Initialize stats for each character
 	for _, charName := range game.GetCharacters() {
 		collector.CharacterStats[charName] = &CharacterStats{
-			Name:               charName,
-			GamesPlayed:        0,
-			GamesWon:           0,
-			ActionAttempts:     make(map[string]int),
-			ActionSuccesses:    make(map[string]int),
-			Challenges:         0,
-			ChallengeSuccesses: 0,
-			Blocks:             0,
-			BlockSuccesses:     0,
-			TotalSurvivalTurns: 0,
+			Name:            charName,
+			ActionAttempts:  make(map[string]int),
+			ActionSuccesses: make(map[string]int),
 		}
 	}
 
@@ -62,58 +68,73 @@ func NewMetricsCollector() *MetricsCollector {
 func (m *MetricsCollector) ProcessGameResults(results []GameResult) {
 	m.TotalGames = len(results)
 
-	// Track total turn count for average
 	totalTurns := 0
-
-	// Process each game
 	for _, result := range results {
-		// Update game length stats
 		totalTurns += result.TotalTurns
-
-		// Update player count stats
 		m.GamesByPlayerCount[result.PlayerCount]++
+		m.TurnsByPlayerCount[result.PlayerCount] += result.TotalTurns
 
-		// Process winner characters
+		// Final-hand wins: which characters the winner ended the game
+		// holding (deduped — holding two copies still counts one game)
+		finalHand := make(map[string]bool)
 		for _, charName := range result.WinnerCharacters {
+			finalHand[charName] = true
+		}
+		for charName := range finalHand {
 			if stats, exists := m.CharacterStats[charName]; exists {
-				stats.GamesWon++
-			}
-
-			// Track wins by player count
-			if m.CharacterWinsByPlayerCount[result.PlayerCount] == nil {
-				m.CharacterWinsByPlayerCount[result.PlayerCount] = make(map[string]int)
-			}
-			m.CharacterWinsByPlayerCount[result.PlayerCount][charName]++
-		}
-
-		// Track which characters participated in this game
-		seenCharacters := make(map[string]bool)
-		for _, playerCards := range result.PlayerStartingCards {
-			for _, charName := range playerCards {
-				seenCharacters[charName] = true
-			}
-		}
-		// Increment GamesPlayed for each unique character that appeared
-		for charName := range seenCharacters {
-			if stats, exists := m.CharacterStats[charName]; exists {
-				stats.GamesPlayed++
+				stats.FinalHandWins++
 			}
 		}
 
-		// Track survival time for all characters using elimination data
+		// Dealt characters: per player-slot (win rate, survival) and per
+		// game (participation)
+		seenInGame := make(map[string]bool)
 		for playerID, playerCards := range result.PlayerStartingCards {
-			survivalTurns := result.TotalTurns // Default: survived entire game
+			dealt := make(map[string]bool)
+			for _, charName := range playerCards {
+				dealt[charName] = true
+			}
+
+			survivalTurns := result.TotalTurns // Default: survived the entire game
 			if elimTurn, eliminated := result.EliminationTurns[playerID]; eliminated {
 				survivalTurns = elimTurn
 			}
-			for _, charName := range playerCards {
-				if stats, exists := m.CharacterStats[charName]; exists {
-					stats.TotalSurvivalTurns += survivalTurns
+			survivalFraction := 1.0
+			if result.TotalTurns > 0 {
+				survivalFraction = float64(survivalTurns) / float64(result.TotalTurns)
+			}
+
+			for charName := range dealt {
+				seenInGame[charName] = true
+				stats, exists := m.CharacterStats[charName]
+				if !exists {
+					continue
+				}
+				stats.TimesDealt++
+				stats.TotalSurvivalTurns += survivalTurns
+				stats.SurvivalFractionSum += survivalFraction
+				if playerID == result.WinnerID {
+					stats.WinsWhenDealt++
+				}
+
+				// Per-player-count dealt/win tallies
+				if m.DealtByPlayerCount[result.PlayerCount] == nil {
+					m.DealtByPlayerCount[result.PlayerCount] = make(map[string]int)
+					m.WinsByPlayerCount[result.PlayerCount] = make(map[string]int)
+				}
+				m.DealtByPlayerCount[result.PlayerCount][charName]++
+				if playerID == result.WinnerID {
+					m.WinsByPlayerCount[result.PlayerCount][charName]++
 				}
 			}
 		}
+		for charName := range seenInGame {
+			if stats, exists := m.CharacterStats[charName]; exists {
+				stats.GamesDealt++
+			}
+		}
 
-		// Process each action for detailed metrics
+		// Process each action for claim/bluff/block metrics
 		m.processGameActions(result)
 	}
 
@@ -122,93 +143,66 @@ func (m *MetricsCollector) ProcessGameResults(results []GameResult) {
 		m.AverageGameLength = float64(totalTurns) / float64(m.TotalGames)
 	}
 
-	// Note: Character GamesPlayed is now tracked during game processing above,
-	// not estimated. Each character's participation is recorded from PlayerStartingCards.
-
 	// Generate rankings
 	m.calculateRankings()
 }
 
-// processGameActions analyzes the actions in a game
+// requiredCharacterFor maps a character action to the character it claims.
+func requiredCharacterFor(action string) string {
+	switch action {
+	case "Tax":
+		return game.Duke
+	case "Steal":
+		return game.Captain
+	case "Assassinate":
+		return game.Assassin
+	case "Exchange":
+		return game.Ambassador
+	}
+	return ""
+}
+
+// processGameActions tallies claim, bluff, action, and block statistics from
+// a game's action log, using the log's ground-truth fields.
 func (m *MetricsCollector) processGameActions(result GameResult) {
-	// Process each action log
-	characterInfluence := make(map[int][]string) // Map player IDs to their character cards
-
-	// Process actions
 	for _, action := range result.Actions {
-		actionName := action.Action
-		actorID := action.PlayerID
-
-		// Track character-specific action stats
-		if characterInfluence[actorID] != nil {
-			for _, charName := range characterInfluence[actorID] {
-				if stats, exists := m.CharacterStats[charName]; exists {
-					if _, ok := stats.ActionAttempts[actionName]; !ok {
-						stats.ActionAttempts[actionName] = 0
-					}
-					stats.ActionAttempts[actionName]++
-
-					if action.Success {
-						if _, ok := stats.ActionSuccesses[actionName]; !ok {
-							stats.ActionSuccesses[actionName] = 0
-						}
-						stats.ActionSuccesses[actionName]++
-					}
+		// Character-action claims (Tax claims Duke, Steal claims Captain, ...)
+		if claimed := requiredCharacterFor(action.Action); claimed != "" {
+			if stats, exists := m.CharacterStats[claimed]; exists {
+				stats.ActionAttempts[action.Action]++
+				if action.Success {
+					stats.ActionSuccesses[action.Action]++
 				}
-			}
-		}
 
-		// Track challenge stats
-		if action.Challenged {
-			// Get the character required for this action
-			var requiredChar string
-			switch actionName {
-			case "Tax":
-				requiredChar = game.Duke
-			case "Steal":
-				requiredChar = game.Captain
-			case "Assassinate":
-				requiredChar = game.Assassin
-			case "Exchange":
-				requiredChar = game.Ambassador
-			}
-
-			// Update challenge stats for this character
-			if requiredChar != "" {
-				if stats, exists := m.CharacterStats[requiredChar]; exists {
+				stats.Claims++
+				if action.Challenged {
 					stats.Challenges++
-					if !action.Success && action.Blocker == -1 {
-						// Challenge failed
-						stats.ChallengeSuccesses++
+				}
+				if !action.ActorHadCard {
+					stats.Bluffs++
+					if action.Challenged {
+						stats.BluffsCaught++
 					}
 				}
 			}
 		}
 
-		// Track block stats
-		if action.Blocker != -1 {
-			// Determine which character was claimed for blocking
-			var blockingChar string
-			switch actionName {
-			case "Foreign Aid":
-				blockingChar = game.Duke
-			case "Steal":
-				// Use the actual blocking character claimed
-				if action.BlockingCharacter != "" {
-					blockingChar = action.BlockingCharacter
-				} else {
-					// Fallback to Captain if not specified (for backwards compatibility)
-					blockingChar = game.Captain
+		// Block claims (every attempt is in the log, including defeated ones)
+		if action.Blocker != -1 && action.BlockingCharacter != "" {
+			if stats, exists := m.CharacterStats[action.BlockingCharacter]; exists {
+				stats.Blocks++
+				if action.BlockSucceeded {
+					stats.BlockSuccesses++
 				}
-			case "Assassinate":
-				blockingChar = game.Contessa
-			}
 
-			if blockingChar != "" {
-				if stats, exists := m.CharacterStats[blockingChar]; exists {
-					stats.Blocks++
-					if !action.Success {
-						stats.BlockSuccesses++
+				stats.Claims++
+				if action.BlockChallenged {
+					stats.Challenges++
+				}
+				if !action.BlockerHadCard {
+					stats.Bluffs++
+					if action.BlockChallenged {
+						stats.BluffsCaught++
 					}
 				}
 			}
@@ -221,47 +215,48 @@ func (m *MetricsCollector) calculateRankings() {
 	m.RankedCharacters = make([]CharacterRanking, 0, len(m.CharacterStats))
 
 	for charName, stats := range m.CharacterStats {
-		// Calculate rates
+		// Dealt win rate
 		winRate := float64(0)
-		if stats.GamesPlayed > 0 {
-			winRate = float64(stats.GamesWon) / float64(stats.GamesPlayed)
+		if stats.TimesDealt > 0 {
+			winRate = float64(stats.WinsWhenDealt) / float64(stats.TimesDealt)
 		}
 
-		// Calculate action success rate
+		// Signature action success rate
 		actionAttempts := 0
 		actionSuccesses := 0
 		for action, attempts := range stats.ActionAttempts {
 			actionAttempts += attempts
 			actionSuccesses += stats.ActionSuccesses[action]
 		}
-
 		actionRate := float64(0)
 		if actionAttempts > 0 {
 			actionRate = float64(actionSuccesses) / float64(actionAttempts)
 		}
 
-		// Calculate bluff success rate
+		// Bluff success rate: bluffed claims that went unchallenged
 		bluffSuccess := float64(0)
-		if stats.Challenges > 0 {
-			bluffSuccess = float64(stats.ChallengeSuccesses) / float64(stats.Challenges)
+		if stats.Bluffs > 0 {
+			bluffSuccess = float64(stats.Bluffs-stats.BluffsCaught) / float64(stats.Bluffs)
 		}
 
-		// Calculate block success rate
+		// Block success rate
 		blockRate := float64(0)
 		if stats.Blocks > 0 {
 			blockRate = float64(stats.BlockSuccesses) / float64(stats.Blocks)
 		}
 
-		// Calculate survival rate (approximated)
-		survivalRate := float64(1.0) // Placeholder
-		if stats.TotalSurvivalTurns > 0 && m.TotalGames > 0 {
-			survivalRate = float64(stats.TotalSurvivalTurns) / (float64(stats.GamesPlayed) * m.AverageGameLength)
+		// Average fraction of the game survived when dealt
+		survivalRate := float64(0)
+		if stats.TimesDealt > 0 {
+			survivalRate = stats.SurvivalFractionSum / float64(stats.TimesDealt)
 		}
 
-		// Calculate composite power score (weighted average)
-		powerScore := winRate*0.4 + actionRate*0.2 + bluffSuccess*0.15 + blockRate*0.15 + survivalRate*0.1
+		// Composite power score: winning when dealt dominates; the
+		// character's utility (action/block success), bluffability, and
+		// survivability are secondary. Weights are a documented judgment
+		// call, not a fitted model.
+		powerScore := winRate*0.6 + actionRate*0.15 + blockRate*0.1 + bluffSuccess*0.1 + survivalRate*0.05
 
-		// Add to rankings
 		m.RankedCharacters = append(m.RankedCharacters, CharacterRanking{
 			Name:         charName,
 			WinRate:      winRate,
@@ -278,31 +273,25 @@ func (m *MetricsCollector) calculateRankings() {
 	})
 }
 
-// GetStatisticsByPlayerCount returns statistics broken down by player count
+// GetStatisticsByPlayerCount returns statistics broken down by player count,
+// all measured from the game data (no approximations).
 func (m *MetricsCollector) GetStatisticsByPlayerCount() map[int]*PlayerCountStats {
 	result := make(map[int]*PlayerCountStats)
 
-	// This would be more accurate with actual game data tracking character distribution
-	// For now, we'll provide a simple approximation
 	for playerCount, gameCount := range m.GamesByPlayerCount {
 		stats := &PlayerCountStats{
 			PlayerCount:       playerCount,
 			GamesPlayed:       gameCount,
-			AverageGameLength: 0,
 			CharacterWinRates: make(map[string]float64),
 		}
 
-		// Calculate actual average game length for this player count
-		// This is still approximated, would need per-game tracking for exact values
-		stats.AverageGameLength = m.AverageGameLength * (1 + 0.1*float64(playerCount-3))
+		if gameCount > 0 {
+			stats.AverageGameLength = float64(m.TurnsByPlayerCount[playerCount]) / float64(gameCount)
+		}
 
-		// Use actual character win data for this player count
-		if winsByChar, exists := m.CharacterWinsByPlayerCount[playerCount]; exists {
-			for charName, wins := range winsByChar {
-				// Calculate win rate as wins / games for this player count
-				if gameCount > 0 {
-					stats.CharacterWinRates[charName] = float64(wins) / float64(gameCount)
-				}
+		for charName, dealt := range m.DealtByPlayerCount[playerCount] {
+			if dealt > 0 {
+				stats.CharacterWinRates[charName] = float64(m.WinsByPlayerCount[playerCount][charName]) / float64(dealt)
 			}
 		}
 

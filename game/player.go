@@ -14,7 +14,7 @@ type Player interface {
 	ChooseBlockingCharacter(action Action) Card
 
 	// When challenged
-	RevealCard(card Card)              // Reveal a specific card
+	RevealCard(card Card) Card         // Remove and return the revealed card (the game shuffles it back and deals a replacement)
 	LoseInfluence() Card               // Choose which card to lose
 	HasCard(card Card) bool            // Check if player has a specific card
 	ChooseExchange(draw []Card) []Card // Ambassador exchange
@@ -53,7 +53,7 @@ func NewAIPlayer(id int, strategy *AIStrategy, seed int64) *AIPlayer {
 		Coins:      0,
 		Influences: make([]Card, 0),
 		Strategy:   strategy,
-		RNG:        rand.New(rand.NewSource(seed + int64(id))), // Each player has their own RNG
+		RNG:        rand.New(rand.NewSource(seed)), // Callers derive a distinct seed per player via MixSeed
 	}
 }
 
@@ -166,35 +166,29 @@ func (p *AIPlayer) ChooseBlockingCharacter(action Action) Card {
 	return blockingChars[p.RNG.Intn(len(blockingChars))]
 }
 
-// RevealCard marks a specific card as revealed
-func (p *AIPlayer) RevealCard(card Card) {
+// RevealCard removes and returns the specified card from the player's hand,
+// proving a challenged claim. The game shuffles the revealed card back into
+// the deck and deals a replacement, keeping the hand size unchanged.
+func (p *AIPlayer) RevealCard(card Card) Card {
 	for i, c := range p.Influences {
-		if c.IsEqual(card) && !c.Shown {
-			p.Influences[i].Shown = true
-			return
+		if c.IsEqual(card) {
+			revealed := p.Influences[i]
+			p.Influences = append(p.Influences[:i], p.Influences[i+1:]...)
+			return revealed
 		}
 	}
 
 	panic(fmt.Sprintf("Player %d doesn't have card %s to reveal", p.ID, card.Name))
 }
 
-// LoseInfluence removes an influence card (due to coup or challenge)
+// LoseInfluence removes an influence card (due to coup, assassination, or a
+// lost challenge). The lost card is removed from play by the caller.
 func (p *AIPlayer) LoseInfluence() Card {
 	if len(p.Influences) == 0 {
 		panic(fmt.Sprintf("Player %d has no influences to lose", p.ID))
 	}
 
-	// Try to lose a shown card first
-	for i, card := range p.Influences {
-		if card.Shown {
-			lost := p.Influences[i]
-			// Remove card at index i
-			p.Influences = append(p.Influences[:i], p.Influences[i+1:]...)
-			return lost
-		}
-	}
-
-	// If no shown cards, randomly lose an unshown card
+	// Randomly lose a card
 	idx := p.RNG.Intn(len(p.Influences))
 	lost := p.Influences[idx]
 	p.Influences = append(p.Influences[:idx], p.Influences[idx+1:]...)
@@ -204,7 +198,7 @@ func (p *AIPlayer) LoseInfluence() Card {
 // HasCard checks if the player has a specific card
 func (p *AIPlayer) HasCard(card Card) bool {
 	for _, c := range p.Influences {
-		if c.Name == card.Name && !c.Shown {
+		if c.Name == card.Name {
 			return true
 		}
 	}

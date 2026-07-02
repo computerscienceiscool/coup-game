@@ -48,9 +48,100 @@ Steal blocks now credit only the actual blocking character (Captain or Ambassado
 
 ---
 
+## Engine Rules Bugs (Fixed 2026-07-01)
+
+Found by auditing the 1M-game results against the code (impossible winner hands,
+non-target blocks, and mass-duplicate games were all visible in results/*.csv).
+
+### ~~BUG-11: Winning a challenge granted an extra influence card (CRITICAL)~~ FIXED
+`RevealCard` only marked the revealed card `Shown` and left it in the hand, while
+`ResolveChallenge`/`ResolveBlockChallenge` added a *new copy* of the card to the deck and
+dealt a replacement — every successfully defended challenge grew the defender's hand by one.
+In the 1M-game dataset 48.9% of winners ended with 3–10 influence cards. `RevealCard` now
+removes and returns the card, that same instance is shuffled back, and a replacement is
+drawn, keeping hand size constant. The now-unused `Card.Shown` field was removed, along with
+the "lose shown cards first" logic in `LoseInfluence`. `Game.ValidateInvariants()` enforces
+the card economy (15 cards, 3 per character, ≤2 per hand) and is exercised after every
+action in `TestCardConservation`.
+
+### ~~BUG-12: Any player could block Steal/Assassinate (CRITICAL)~~ FIXED
+`ResolveAction` offered the block to every living opponent and neither AI checked whether it
+was the target — 40.3% of steal/assassination blocks in the dataset came from non-targets.
+`potentialBlockers` now restricts blocking to the target for targeted actions (any player
+may still block Foreign Aid), enforced at the engine level. Covered by `TestOnlyTargetCanBlock`.
+
+### ~~BUG-13: Lost influence returned to the deck~~ FIXED
+Lost cards were shuffled back into the deck (a house rule the spec had codified). Per
+official rules they're now removed from play into `Game.Discarded`, which also enables
+future card-counting AIs. The spec was corrected to match.
+
+### ~~BUG-14: Per-game seeds collided across workers (CRITICAL for statistics)~~ FIXED
+`gameSeed = Seed + workerID + gameID` collides whenever the sums match: 67.5% of the 1M
+games were bit-identical duplicates of another game, and results weren't reproducible even
+with a fixed seed (scheduling decided which worker got which game). Seeds are now derived
+via `game.MixSeed` (SplitMix64) from the base seed and game ID only. Player RNGs were also
+double-offset (`seed+i` at the call site plus `+id` in the constructor); they now get
+independent streams via `MixSeed`. Covered by `TestSeedingReproducibleAndDistinct`.
+
+### ~~BUG-15: Assassination cost not refunded on a successful challenge~~ FIXED
+The 3 coins are paid up front and stay paid when blocked (correct), but the rulebook returns
+the cost when the action itself is successfully challenged. `ResolveAction` now refunds it.
+Covered by `TestAssassinateRefundOnSuccessfulChallenge` / `TestAssassinateCostPaidWhenBlocked`.
+
+### ~~BUG-16: Turn counter counted skipped eliminated seats~~ FIXED
+`NextPlayer` incremented `Turn` even when passing over dead players, inflating game-length
+and survival statistics in proportion to the body count. Turns are now counted in
+`ExecuteTurn` (one per action taken) and `NextPlayer` just advances to the next living seat.
+
+### ~~BUG-17: An action could be blocked repeatedly / enhanced block logic early-returned~~ FIXED
+After a block was defeated by a challenge, the loop let the next player also block the same
+action; now an action is blocked at most once. `EnhancedAIPlayer.BlockDecision` also
+returned early on the Captain block-rate roll without ever checking for a held Ambassador;
+the decision now checks all real blocking characters before considering a bluff.
+
+---
+
+## Metrics & Analysis Bugs (Fixed 2026-07-02)
+
+### ~~BUG-18: ActionSuccessRate is never populated~~ FIXED
+Actions are now attributed to the character they claim (Tax→Duke, Steal→Captain, ...) and
+tallied from the log; character_stats.csv reports real signature-action success rates.
+
+### ~~BUG-19: Block statistics only count surviving blocks~~ FIXED
+Defeated blocks stay in the ActionLog (`Blocker` is no longer reset); new `BlockChallenged`
+and `BlockSucceeded` fields record the outcome. BlockSuccessRate = stopped/attempted.
+
+### ~~BUG-20: "BluffSuccessRate" measures the opposite of its name~~ FIXED
+The engine now records ground truth at claim time (`ActorHadCard`, `BlockerHadCard`), so
+bluff metrics are direct measurements: BluffRate = claims made without the card,
+BluffSuccessRate = bluffed claims that went unchallenged. Block claims are included, and
+PowerScore no longer rewards being caught.
+
+### ~~BUG-21: Per-player-count AvgGameLength is fabricated~~ FIXED
+`GetStatisticsByPlayerCount` now reports the measured average (TurnsByPlayerCount /
+GamesByPlayerCount). The `*(1+0.1*(pc-3))` formula is gone.
+
+### ~~BUG-22: Character win attribution is a mismatched ratio~~ FIXED
+Primary metric is now DealtWinRate = P(win | dealt the character at game start), computed
+per player-slot; FinalHandWinRate (winner's final hand contained it, deduped) is reported
+alongside. The chi-squared significance test now compares dealt wins against expectations
+proportional to dealt counts (approximation caveat documented in analyzer.go).
+
+### ~~FEAT-6: Support game state tracking for known cards~~ FIXED
+GameState now carries real public information: the face-up discard pile and every player's
+public claim history (cleared when they Exchange). EnhancedAIPlayer uses it: Medium and High
+AIs auto-challenge claims whose three copies are all visible (own hand + discard) and never
+make visibly-impossible bluffs; High AIs also scale their challenge rate by visible copies
+and by how many distinct characters the claimant has claimed. Low AIs remain memoryless.
+Effect measured over 1M games: skill levels went from Low 36.7% / High 30.9% of wins
+(aggression punished) to Low 33.8% / High 33.5% (near parity).
+
+---
+
 ## Bugs (Open)
 
-None remaining!
+None known. All results under results/ and resultsofgame.md were regenerated 2026-07-02
+with the fixed engine and metrics (see results/README.md for provenance).
 
 ---
 
@@ -58,12 +149,11 @@ None remaining!
 
 ### ~~FEAT-1: Store simulation results in StatisticsResult for CSV export~~ FIXED (BUG-1)
 
-### FEAT-2: Add proper statistical significance testing
-**File:** `analysis/analyzer.go:177-204`
-
-The current "significance" calculation uses hardcoded heuristic thresholds instead of
-real hypothesis testing. Implement chi-squared or binomial proportion tests to
-determine whether character win rate differences are statistically significant.
+### ~~FEAT-2: Add proper statistical significance testing~~ FIXED (with caveat)
+`calculateSignificance` runs a chi-squared goodness-of-fit test of dealt wins against
+expectations proportional to dealt counts. Dealt player-slots are not fully independent
+observations (two characters per hand, several slots per game), so treat the p-value as
+an approximation — documented in the code and results/README.md.
 
 ---
 
@@ -73,15 +163,12 @@ each player was dealt at game start. This enables accurate per-character statist
 
 ---
 
-### FEAT-4: Add comprehensive test coverage
-Current test coverage is minimal (4 game tests, 2 simulation tests, 0 analysis tests).
-Missing tests:
-- Challenge resolution (both success and failure)
-- Block challenge mechanics
-- Ambassador exchange edge cases (empty/near-empty deck)
-- Enhanced AI strategy behavior at each competitive level
-- Concurrent simulation correctness (race condition tests with `-race`)
-- Analysis/export correctness
+### FEAT-4: Add comprehensive test coverage (mostly done)
+Coverage is now 87.5% (game) and 79.9% (simulation): card-conservation invariants after
+every action across all AI modes, target-only blocking, assassinate cost rules, defeated
+block logging, claims tracking, card-counting challenges, metrics collection, and seeding
+reproducibility/distinctness — all run clean under `-race`. Still missing: analysis/export
+tests (0%) and Ambassador exchange edge cases.
 
 ---
 
@@ -91,12 +178,29 @@ occurs and cleared if the block is successfully challenged.
 
 ---
 
-### FEAT-6: Support game state tracking for known cards
-**File:** `game/game.go:389-414`
+### ~~FEAT-6: Support game state tracking for known cards~~ FIXED
+See the entry under "Metrics & Analysis Bugs (Fixed 2026-07-02)": GameState now exposes
+the discard pile and public claim history, and Medium/High AIs use them.
 
-`GetStateForPlayer` returns empty `KnownCards` and `RemainingCards`. In real Coup,
-players should track revealed cards from challenges. Implementing this would enable
-smarter AI decision-making (e.g., not bluffing a character that's been revealed).
+---
+
+### FEAT-14: Randomize challenge/block priority
+**File:** `game/game.go` (challenge and block loops)
+
+Challenges and blocks are offered clockwise from the acting player, first-accepted-wins.
+That convention is unavoidable in some form, but it concentrates challenge risk/reward on
+the seats right after the actor and contributes to a measured last-seat advantage (21.2%
+vs 14.2% fair-share-16.7% in 6-player games). Consider randomizing the polling order per
+action, or collecting all willing challengers and picking one at random, to better model
+the simultaneous "speak up" rule of tabletop play.
+
+---
+
+### FEAT-15: Deeper deduction AI
+Card memory (FEAT-6) covers certainty: impossible claims and impossible bluffs. A full
+deduction AI would track probabilities — Bayesian updating over opponents' likely hands
+from their claims, blocks, and exchanges — and choose bluffs that are consistent with its
+own claim history. This is the difference between counting cards and reading the table.
 
 ---
 

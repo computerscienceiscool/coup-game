@@ -2,9 +2,8 @@ package game
 
 // Card represents a character card in Coup
 type Card struct {
-	Name  string
-	ID    int
-	Shown bool // Whether card has been revealed during a challenge
+	Name string
+	ID   int
 }
 
 // Character constants
@@ -34,17 +33,17 @@ func GetCharacters() []string {
 func GetCardByName(name string) Card {
 	switch name {
 	case Duke:
-		return Card{Name: Duke, ID: DukeID, Shown: false}
+		return Card{Name: Duke, ID: DukeID}
 	case Assassin:
-		return Card{Name: Assassin, ID: AssassinID, Shown: false}
+		return Card{Name: Assassin, ID: AssassinID}
 	case Captain:
-		return Card{Name: Captain, ID: CaptainID, Shown: false}
+		return Card{Name: Captain, ID: CaptainID}
 	case Ambassador:
-		return Card{Name: Ambassador, ID: AmbassadorID, Shown: false}
+		return Card{Name: Ambassador, ID: AmbassadorID}
 	case Contessa:
-		return Card{Name: Contessa, ID: ContessaID, Shown: false}
+		return Card{Name: Contessa, ID: ContessaID}
 	default:
-		return Card{Name: "Unknown", ID: -1, Shown: false}
+		return Card{Name: "Unknown", ID: -1}
 	}
 }
 
@@ -93,8 +92,7 @@ func (c Card) IsEqual(other Card) bool {
 // Copy returns a copy of the card
 func (c Card) Copy() Card {
 	return Card{
-		Name:  c.Name,
-		ID:    c.ID,
-		Shown: c.Shown,
+		Name: c.Name,
+		ID:   c.ID,
 	}
 }

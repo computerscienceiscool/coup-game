@@ -56,7 +56,7 @@ func NewGameWithAITypes(playerCount int, aiTypes []AIPlayerType, competitiveLeve
 			strategy = CreateRandomStrategy(rng, competitiveLevel)
 		}
 
-		players[i] = NewEnhancedAIPlayer(i, strategy, seed+int64(i))
+		players[i] = NewEnhancedAIPlayer(i, strategy, MixSeed(seed, int64(i)+1))
 	}
 
 	game := &Game{
@@ -111,7 +111,7 @@ func NewGameWithMixedAIs(playerCount int, seed int64) (*Game, error) {
 			strategy = CreateRandomStrategy(rng, level)
 		}
 
-		players[i] = NewEnhancedAIPlayer(i, strategy, seed+int64(i))
+		players[i] = NewEnhancedAIPlayer(i, strategy, MixSeed(seed, int64(i)+1))
 	}
 
 	game := &Game{
@@ -140,13 +140,13 @@ func NewGameWithOriginalAI(playerCount int, seed int64) (*Game, error) {
 	deck := NewDeck(rng)
 	players := make([]Player, playerCount)
 
-	// Create original AI players
+	// Create original AI players, each with an independent RNG stream
 	for i := 0; i < playerCount; i++ {
 		players[i] = NewAIPlayer(i, &AIStrategy{
 			BluffRate:     0.3, // 30% chance to bluff
 			ChallengeRate: 0.5, // 50% chance to challenge
 			AlwaysBlock:   true,
-		}, seed+int64(i))
+		}, MixSeed(seed, int64(i)+1))
 	}
 
 	game := &Game{

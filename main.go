@@ -215,6 +215,7 @@ func main() {
 	// Print character rankings with visual bars
 	printCharacterRankings(stats.RankedCharacters)
 
+	fmt.Printf("\n  🔬 Chi-squared test (win rate independent of dealt character): p = %.4g\n", stats.SignificanceLevel)
 	fmt.Printf("\n  📊 Detailed reports: %s\n", colorCyan(*output))
 	printFooter()
 }
@@ -332,11 +333,18 @@ func runTestGame(seed int64, aiMode string, level game.CompetitiveLevel, quiet b
 		fmt.Printf("Winner's cards: %v\n", winnerCards)
 	}
 
-	// Check some basic rules were followed
+	// Verify the card economy stayed consistent through the whole game:
+	// 15 cards total, 3 copies per character, at most 2 per hand
+	if err := g.ValidateInvariants(); err != nil {
+		return fmt.Errorf("rule violation: %w", err)
+	}
+
+	// Verify targeted actions were only ever blocked by their target
 	for _, action := range g.ActionLog {
-		// Check for forced coup at 10+ coins
-		if action.Action != "Coup" && g.Players[action.PlayerID].GetCoins() >= 10 {
-			return fmt.Errorf("rule violation: player %d did not coup with 10+ coins", action.PlayerID+1)
+		if (action.Action == "Steal" || action.Action == "Assassinate") &&
+			action.Blocker != -1 && action.Blocker != action.Target {
+			return fmt.Errorf("rule violation: player %d blocked a %s aimed at player %d",
+				action.Blocker+1, action.Action, action.Target+1)
 		}
 	}
 
@@ -430,7 +438,7 @@ func testCompetitiveLevels(numGames int, seed int64) {
 		}
 
 		// Print progress
-		if (i+1)%50 == 0 {
+		if (i+1)%100000 == 0 {
 			fmt.Printf("Completed %d games...\n", i+1)
 		}
 	}
@@ -595,21 +603,18 @@ func runReplayGame(seed int64, aiMode string) {
 			fmt.Println()
 
 			if lastAction.Challenged {
-				if lastAction.Success {
+				if lastAction.ActorHadCard {
 					fmt.Println("  → Action was challenged but the player had the card!")
 				} else {
-					fmt.Println("  → Action was challenged and failed!")
+					fmt.Println("  → Action was challenged and the bluff was caught!")
 				}
 			}
 			if lastAction.Blocker != -1 {
-				if lastAction.Success {
-					fmt.Printf("  → Player %d attempted to block", lastAction.Blocker+1)
-					if lastAction.BlockingCharacter != "" {
-						fmt.Printf(" with %s", lastAction.BlockingCharacter)
-					}
-					fmt.Println(" but the block was challenged!")
-				} else {
+				if lastAction.BlockSucceeded {
 					fmt.Printf("  → Player %d blocked with %s!\n", lastAction.Blocker+1, lastAction.BlockingCharacter)
+				} else {
+					fmt.Printf("  → Player %d tried to block with %s but the block was challenged and defeated!\n",
+						lastAction.Blocker+1, lastAction.BlockingCharacter)
 				}
 			}
 			if lastAction.Success && lastAction.Blocker == -1 && !lastAction.Challenged {
@@ -722,9 +727,16 @@ func printResultsHeader() {
 
 // Print character rankings with bars
 func printCharacterRankings(rankings []analysis.CharacterRanking) {
-	fmt.Println(boldCode + "  👑 CHARACTER POWER RANKINGS" + resetCode)
+	fmt.Println(boldCode + "  👑 CHARACTER RANKINGS" + resetCode)
 	fmt.Println(boldCode + "  ═══════════════════════════════════════════════════" + resetCode)
+	fmt.Println("  (win rate when a player is dealt the character)")
 	fmt.Println()
+
+	// Display by dealt win rate; the composite PowerScore is in the CSV
+	rankings = append([]analysis.CharacterRanking(nil), rankings...)
+	sort.Slice(rankings, func(i, j int) bool {
+		return rankings[i].WinRate > rankings[j].WinRate
+	})
 
 	maxWinRate := 0.0
 	for _, char := range rankings {

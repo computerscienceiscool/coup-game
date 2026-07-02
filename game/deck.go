@@ -4,6 +4,9 @@ import (
 	"math/rand"
 )
 
+// CopiesPerCharacter is the number of copies of each character in the deck.
+const CopiesPerCharacter = 3
+
 // Deck represents the court deck in Coup
 type Deck struct {
 	Cards []Card
@@ -13,11 +16,11 @@ type Deck struct {
 // NewDeck creates a new deck with 3 of each character card
 func NewDeck(rng *rand.Rand) *Deck {
 	characters := GetCharacters()
-	cards := make([]Card, 0, len(characters)*3)
+	cards := make([]Card, 0, len(characters)*CopiesPerCharacter)
 
 	// Add 3 copies of each character
 	for _, char := range characters {
-		for i := 0; i < 3; i++ {
+		for i := 0; i < CopiesPerCharacter; i++ {
 			cards = append(cards, GetCardByName(char))
 		}
 	}

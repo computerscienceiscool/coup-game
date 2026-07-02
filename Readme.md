@@ -22,6 +22,10 @@ The new AI strategy system is much more sophisticated than the original:
 - **Target Selection**: Intelligent selection of targets for actions
 - **Character-Specific Bluff Rates**: Different bluffing probabilities for each character
 - **Character-Specific Block Rates**: Different blocking probabilities for each character
+- **Card Memory** (Medium/High): AIs count the face-up discard pile and each
+  player's public claim history — impossible claims are always challenged,
+  visibly-impossible bluffs are never made, and High AIs scale suspicion by
+  claim history (see docs/specification.md)
 
 ## Character Profiles
 

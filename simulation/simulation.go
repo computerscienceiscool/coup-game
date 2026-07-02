@@ -50,21 +50,41 @@ type SimulationResults struct {
 	PlayerCountStats map[int]*PlayerCountStats
 }
 
-// CharacterStats tracks metrics for a single character
+// CharacterStats tracks metrics for a single character. "Dealt" figures are
+// per player-slot (a player who was dealt the character at game start);
+// claim figures cover both action claims and block claims of the character,
+// with bluff counts taken from the ground-truth fields in the ActionLog.
 type CharacterStats struct {
-	Name               string
-	GamesPlayed        int
-	GamesWon           int
-	ActionAttempts     map[string]int
-	ActionSuccesses    map[string]int
-	Challenges         int
-	ChallengeSuccesses int
-	Blocks             int
-	BlockSuccesses     int
-	TotalSurvivalTurns int
+	Name string
+
+	// Dealing and winning
+	GamesDealt    int // games where the character appeared in any starting hand
+	TimesDealt    int // player-slots dealt the character at game start
+	WinsWhenDealt int // ...where that player went on to win the game
+	FinalHandWins int // games whose winner ended the game holding the character
+
+	// Claims (actions and blocks) with ground truth
+	Claims       int // times the character was publicly claimed
+	Challenges   int // ...and that claim was challenged
+	Bluffs       int // claims made without holding the character
+	BluffsCaught int // bluffed claims that were challenged (a challenge always catches a bluff)
+
+	// Signature action (the action this character enables)
+	ActionAttempts  map[string]int
+	ActionSuccesses map[string]int
+
+	// Blocks claiming this character
+	Blocks         int // block attempts
+	BlockSuccesses int // blocks that stopped the action
+
+	// Survival of players dealt this character
+	TotalSurvivalTurns  int     // total turns survived
+	SurvivalFractionSum float64 // sum of (turns survived / game length) per dealt slot
 }
 
-// PlayerCountStats tracks metrics for games with specific player counts
+// PlayerCountStats tracks metrics for games with specific player counts.
+// CharacterWinRates holds each character's dealt win rate — P(win | dealt) —
+// for games with this player count.
 type PlayerCountStats struct {
 	PlayerCount       int
 	GamesPlayed       int
@@ -140,16 +160,15 @@ func (s *Simulator) Run() SimulationResults {
 func (s *Simulator) worker(workerID int) {
 	defer s.WaitGroup.Done()
 
-	// Worker-specific RNG derived from the main seed
-	workerSeed := s.Config.Seed + int64(workerID)
-	rng := rand.New(rand.NewSource(workerSeed))
-
 	for gameID := range s.GameChannel {
-		// Determine player count for this game
-		playerCount := s.determinePlayerCount(gameID, rng)
+		// Per-game seed derived only from the base seed and game ID, so runs
+		// are reproducible and no two games share an RNG stream regardless
+		// of which worker picks them up
+		gameSeed := game.MixSeed(s.Config.Seed, int64(gameID))
+		gameRNG := rand.New(rand.NewSource(game.MixSeed(gameSeed, -1)))
 
-		// Generate game-specific seed
-		gameSeed := workerSeed + int64(gameID)
+		// Determine player count for this game
+		playerCount := s.determinePlayerCount(gameID, gameRNG)
 
 		// Create game based on AI mode
 		var g *game.Game
@@ -163,7 +182,7 @@ func (s *Simulator) worker(workerID int) {
 		default:
 			var aiTypes []game.AIPlayerType
 			if s.Config.CharacterBalance {
-				aiTypes = s.generateBalancedAITypes(playerCount, gameID, rng)
+				aiTypes = s.generateBalancedAITypes(playerCount, gameID, gameRNG)
 			}
 			g, err = game.NewGameWithAITypes(playerCount, aiTypes, s.Config.CompetitiveLevel, gameSeed)
 		}

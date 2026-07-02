@@ -21,7 +21,7 @@ func NewEnhancedAIPlayer(id int, strategy *EnhancedAIStrategy, seed int64) *Enha
 		Coins:      0,
 		Influences: make([]Card, 0),
 		Strategy:   strategy,
-		RNG:        rand.New(rand.NewSource(seed + int64(id))), // Each player has their own RNG
+		RNG:        rand.New(rand.NewSource(seed)), // Callers derive a distinct seed per player via MixSeed
 	}
 }
 
@@ -78,6 +78,14 @@ func (p *EnhancedAIPlayer) RemoveCoins(amount int) error {
 func (p *EnhancedAIPlayer) ChooseAction(state GameState, actions []Action) Action {
 	if len(actions) == 0 {
 		panic("No legal actions available")
+	}
+
+	// Card counting (Medium and High): never claim a character when every
+	// copy is visibly accounted for — such a bluff loses to a challenge for
+	// free. Income/Foreign Aid/Coup require no card, so this never empties
+	// the action list.
+	if p.Strategy.Level != LowCompetitive {
+		actions = p.filterImpossibleBluffs(state, actions)
 	}
 
 	// Force coup if required by rules
@@ -331,16 +339,51 @@ func (p *EnhancedAIPlayer) targetBiggestThreat(actions []Action, state GameState
 	return actions[p.RNG.Intn(len(actions))]
 }
 
-// ChallengeDecision determines whether to challenge a claim
+// ChallengeDecision determines whether to challenge a claim, using the
+// public information a real player has: their own hand, the face-up discard
+// pile, and the claimant's public claim history.
 func (p *EnhancedAIPlayer) ChallengeDecision(state GameState, claimant Player, claim Action) bool {
+	requiredCard := claim.GetRequiredCard()
+	if requiredCard.Name == "" {
+		return false // Nothing claimed, nothing to challenge
+	}
+
+	// Card counting (Medium and High): if every copy of the claimed
+	// character is visible to us, the claim is impossible and challenging
+	// is a guaranteed, risk-free win.
+	visible := p.visibleCopies(state, requiredCard.Name)
+	if p.Strategy.Level != LowCompetitive && visible >= CopiesPerCharacter {
+		return true
+	}
+
 	// Base challenge rate
 	challengeRate := p.Strategy.ChallengeRate
 
-	// Higher competitive AIs are better at detecting bluffs
-	if p.Strategy.Level == HighCompetitive {
-		// If AI has the card that's being claimed, definitely challenge
-		if claim.CanBeChallenged() && p.hasCardRequiredForAction(claim) {
-			return true
+	switch p.Strategy.Level {
+	case HighCompetitive:
+		// Scale by how many copies we can account for: the more we see, the
+		// fewer remain for the claimant to plausibly hold
+		switch visible {
+		case 1:
+			challengeRate *= 1.2
+		case 2:
+			challengeRate *= 1.8
+		}
+
+		// Claim history: a player who has claimed many distinct characters
+		// is bluffing somewhere; a player with one consistent claim is
+		// probably telling the truth
+		switch claimed := len(state.Claims[claimant.GetID()]); {
+		case claimed >= 4:
+			challengeRate *= 2.0
+		case claimed == 3:
+			challengeRate *= 1.5
+		case claimed <= 1:
+			challengeRate *= 0.8
+		}
+	case MediumCompetitive:
+		if visible == 2 {
+			challengeRate *= 1.4
 		}
 	}
 
@@ -369,66 +412,90 @@ func (p *EnhancedAIPlayer) ChallengeDecision(state GameState, claimant Player, c
 	return p.RNG.Float64() < challengeRate
 }
 
-// hasCardRequiredForAction checks if the player has the card required for an action
-func (p *EnhancedAIPlayer) hasCardRequiredForAction(action Action) bool {
-	requiredCard := action.GetRequiredCard()
-	if requiredCard.Name == "" {
-		return false // Action doesn't require a specific card
+// visibleCopies counts how many copies of a character this player can see
+// with certainty: cards in their own hand plus the face-up discard pile.
+func (p *EnhancedAIPlayer) visibleCopies(state GameState, name string) int {
+	n := 0
+	for _, c := range p.Influences {
+		if c.Name == name {
+			n++
+		}
 	}
+	for _, c := range state.Discarded {
+		if c.Name == name {
+			n++
+		}
+	}
+	return n
+}
 
-	return p.HasCard(requiredCard)
+// filterImpossibleBluffs removes actions that would claim a character the
+// player doesn't hold when every copy is visibly out of play or in their own
+// hand — a claim any card-counting opponent challenges for free.
+func (p *EnhancedAIPlayer) filterImpossibleBluffs(state GameState, actions []Action) []Action {
+	filtered := make([]Action, 0, len(actions))
+	for _, action := range actions {
+		required := action.GetRequiredCard()
+		if required.Name != "" && !p.HasCard(required) &&
+			p.visibleCopies(state, required.Name) >= CopiesPerCharacter {
+			continue
+		}
+		filtered = append(filtered, action)
+	}
+	if len(filtered) == 0 {
+		return actions
+	}
+	return filtered
 }
 
 // BlockDecision determines whether to block an action
 func (p *EnhancedAIPlayer) BlockDecision(state GameState, actor Player, action Action) bool {
-	// If always block is false, use character-specific block rates
-	if !p.Strategy.AlwaysBlock {
-		// Get blocking characters for this action
-		blockingChars := GetBlockingCharacters(action.Name())
-
-		// If action can't be blocked
-		if len(blockingChars) == 0 {
-			return false
-		}
-
-		// Check if player has any of the blocking characters
-		for _, blockChar := range blockingChars {
-			if p.HasCard(blockChar) {
-				return true // Block with real character
-			}
-
-			// Check character-specific block rates for bluffing
-			if blockRate, exists := p.Strategy.CharacterBlockRates[blockChar.Name]; exists {
-				return p.RNG.Float64() < blockRate
-			}
-		}
-
-		// If we don't have a blocking character, decide whether to bluff
-		// Base this on the specific character's bluff rate
-		for _, blockChar := range blockingChars {
-			if bluffRate, exists := p.Strategy.CharacterBluffRates[blockChar.Name]; exists {
-				return p.RNG.Float64() < bluffRate
-			}
-		}
-
-		// Fallback to general bluff rate
-		return p.RNG.Float64() < p.Strategy.BluffRate
-	}
-
-	// Original behavior: always block if possible
+	// Get blocking characters for this action
 	blockingChars := GetBlockingCharacters(action.Name())
+
+	// If action can't be blocked
 	if len(blockingChars) == 0 {
 		return false
 	}
 
-	// Check if player has any of the blocking characters
+	// Holding a real blocking character: block. Non-AlwaysBlock strategies
+	// apply their character-specific block rate instead of always blocking.
 	for _, blockChar := range blockingChars {
-		if p.HasCard(blockChar) {
-			return true // Block with real character
+		if !p.HasCard(blockChar) {
+			continue
+		}
+		if !p.Strategy.AlwaysBlock {
+			if blockRate, exists := p.Strategy.CharacterBlockRates[blockChar.Name]; exists {
+				return p.RNG.Float64() < blockRate
+			}
+		}
+		return true
+	}
+
+	// No blocking character in hand: decide whether to bluff a block. Card
+	// counters (Medium and High) never bluff a character whose copies are
+	// all visibly accounted for.
+	plausible := blockingChars
+	if p.Strategy.Level != LowCompetitive {
+		plausible = plausible[:0:0]
+		for _, blockChar := range blockingChars {
+			if p.visibleCopies(state, blockChar.Name) < CopiesPerCharacter {
+				plausible = append(plausible, blockChar)
+			}
+		}
+		if len(plausible) == 0 {
+			return false
 		}
 	}
 
-	// If we don't have a blocking character, decide whether to bluff
+	// Use the character-specific bluff rate when one is configured
+	for _, blockChar := range plausible {
+		if bluffRate, exists := p.Strategy.CharacterBluffRates[blockChar.Name]; exists {
+			return p.RNG.Float64() < bluffRate
+		}
+	}
+
+	// Fallback to general bluff rate
 	return p.RNG.Float64() < p.Strategy.BluffRate
 }
 
@@ -459,35 +526,29 @@ func (p *EnhancedAIPlayer) ChooseBlockingCharacter(action Action) Card {
 	return blockingChars[p.RNG.Intn(len(blockingChars))]
 }
 
-// RevealCard marks a specific card as revealed
-func (p *EnhancedAIPlayer) RevealCard(card Card) {
+// RevealCard removes and returns the specified card from the player's hand,
+// proving a challenged claim. The game shuffles the revealed card back into
+// the deck and deals a replacement, keeping the hand size unchanged.
+func (p *EnhancedAIPlayer) RevealCard(card Card) Card {
 	for i, c := range p.Influences {
-		if c.IsEqual(card) && !c.Shown {
-			p.Influences[i].Shown = true
-			return
+		if c.IsEqual(card) {
+			revealed := p.Influences[i]
+			p.Influences = append(p.Influences[:i], p.Influences[i+1:]...)
+			return revealed
 		}
 	}
 
 	panic(fmt.Sprintf("Player %d doesn't have card %s to reveal", p.ID, card.Name))
 }
 
-// LoseInfluence removes an influence card (due to coup or challenge)
+// LoseInfluence removes an influence card (due to coup, assassination, or a
+// lost challenge). The lost card is removed from play by the caller.
 func (p *EnhancedAIPlayer) LoseInfluence() Card {
 	if len(p.Influences) == 0 {
 		panic(fmt.Sprintf("Player %d has no influences to lose", p.ID))
 	}
 
-	// Try to lose a shown card first
-	for i, card := range p.Influences {
-		if card.Shown {
-			lost := p.Influences[i]
-			// Remove card at index i
-			p.Influences = append(p.Influences[:i], p.Influences[i+1:]...)
-			return lost
-		}
-	}
-
-	// If no shown cards, lose the least preferred card
+	// Lose the least preferred card
 	if len(p.Influences) > 1 && p.Strategy.Level != LowCompetitive {
 		// Get scores for each card
 		scores := make([]float64, len(p.Influences))
@@ -534,7 +595,7 @@ func (p *EnhancedAIPlayer) LoseInfluence() Card {
 // HasCard checks if the player has a specific card
 func (p *EnhancedAIPlayer) HasCard(card Card) bool {
 	for _, c := range p.Influences {
-		if c.Name == card.Name && !c.Shown {
+		if c.Name == card.Name {
 			return true
 		}
 	}

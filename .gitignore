@@ -1,0 +1,9 @@
+# Profiling output (go tool pprof)
+*.pprof
+
+# Large, regenerable simulation logs. These are reproducible exactly from a
+# fixed seed — see results/README.md for the commands. Only the small summary
+# CSVs (character_stats.csv, player_count_analysis.csv) and READMEs are
+# version-controlled.
+action_logs.csv
+game_logs.csv
